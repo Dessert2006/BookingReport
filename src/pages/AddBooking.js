@@ -1,0 +1,537 @@
+import React, { useState, useEffect } from "react";
+import { db } from "../firebase";
+import { collection, addDoc, getDoc, doc, updateDoc, setDoc, arrayUnion } from "firebase/firestore";
+import Select from "react-select";
+import { toast } from "react-toastify";
+
+function AddBooking() {
+  const [newEntry, setNewEntry] = useState({
+    bookingDate: "",
+    shipper: "",
+    bookingValidity: "",
+    line: "",
+    bookingNo: "",
+    pol: "",
+    pod: "",
+    fpod: "",
+    containerNo: "",
+    qty: "",
+    equipmentType: "",
+    vessel: "",
+    voyage: "",
+    portCutOff: "",
+    siCutOff: "",
+    etd: ""
+  });
+
+  const [masterData, setMasterData] = useState({
+    shippers: [],
+    lines: [],
+    pols: [],
+    pods: [],
+    fpods: [],
+    vessels: [],
+    equipmentTypes: []
+  });
+
+  const [modalData, setModalData] = useState({
+    shipper: { name: "", contactPerson: "", email: "", contactNumber: "", address: "", salesPerson: "" },
+    line: { name: "", contactPerson: "", email: "", contactNumber: "" },
+    pol: { name: "" },
+    pod: { name: "" },
+    fpod: { name: "", country: "" },
+    vessel: { name: "", flag: "" },
+    equipmentType: { type: "" }
+  });
+
+  const fieldDefinitions = {
+    shipper: [
+      { label: "Shipper Name", key: "name", required: true },
+      { label: "Contact Person", key: "contactPerson" },
+      { label: "Email", key: "email", type: "email" },
+      { label: "Contact Number", key: "contactNumber", type: "tel" },
+      { label: "Address", key: "address" },
+      { label: "Sales Person Name", key: "salesPerson" }
+    ],
+    line: [
+      { label: "Line Name", key: "name", required: true },
+      { label: "Contact Person", key: "contactPerson" },
+      { label: "Email", key: "email", type: "email" },
+      { label: "Contact Number", key: "contactNumber", type: "tel" }
+    ],
+    pol: [{ label: "POL Name", key: "name", required: true }],
+    pod: [{ label: "POD Name", key: "name", required: true }],
+    fpod: [
+      { label: "FPOD Name", key: "name", required: true },
+      { label: "Country", key: "country" }
+    ],
+    vessel: [
+      { label: "Vessel Name", key: "name", required: true },
+      { label: "Flag", key: "flag" }
+    ],
+    equipmentType: [{ label: "Equipment Type", key: "type", required: true }]
+  };
+
+  const fetchMasterData = async () => {
+    const masterFields = ["shipper", "line", "pol", "pod", "fpod", "vessel", "equipmentType"];
+    let newMasterData = {
+      shippers: [],
+      lines: [],
+      pols: [],
+      pods: [],
+      fpods: [],
+      vessels: [],
+      equipmentTypes: []
+    };
+    for (let field of masterFields) {
+      const docRef = doc(db, "newMaster", field);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        newMasterData[field + (field === "equipmentType" ? "s" : "s")] = 
+          (docSnap.data().list || []).map(item =>{
+            if (field === "fpod") {
+              return `${item.name}, ${item.country}`;
+            } else {
+              return item.name || item.type || item || "";
+            }
+          });
+      }
+    }
+    setMasterData(newMasterData);
+  };
+
+  useEffect(() => {
+    fetchMasterData();
+  }, []);
+
+  const formatCutOffInput = (value) => {
+    const numericValue = value.replace(/[^0-9]/g, "");
+    if (numericValue.length === 8) {
+      const day = numericValue.substring(0, 2);
+      const month = numericValue.substring(2, 4);
+      const hour = numericValue.substring(4, 6);
+      const minute = numericValue.substring(6, 8);
+      const dayNum = parseInt(day, 10);
+      const monthNum = parseInt(month, 10);
+      const hourNum = parseInt(hour, 10);
+      const minuteNum = parseInt(minute, 10);
+
+      if (
+        dayNum >= 1 && dayNum <= 31 &&
+        monthNum >= 1 && monthNum <= 12 &&
+        hourNum >= 0 && hourNum <= 23 &&
+        minuteNum >= 0 && minuteNum <= 59
+      ) {
+        return `${day}/${month}-${hour}${minute} HRS`;
+      } else {
+        toast.error("Invalid date or time. Please enter a valid DDMMHHMM (e.g., 06061800 for 06/06-1800 HRS)");
+        return value;
+      }
+    }
+    return numericValue;
+  };
+
+  const handleCutOffChange = (field, value) => {
+    const formattedValue = formatCutOffInput(value);
+    setNewEntry({ ...newEntry, [field]: formattedValue });
+  };
+
+  const handleModalInputChange = (field, subfield, value) => {
+    setModalData({
+      ...modalData,
+      [field]: { ...modalData[field], [subfield]: value }
+    });
+  };
+
+  const handleAddToMaster = async (field) => {
+    const data = modalData[field];
+    const requiredFields = fieldDefinitions[field].filter(f => f.required).map(f => f.key);
+    if (!requiredFields.every(key => data[key].trim())) {
+      toast.error(`Please enter all required fields for ${field}.`);
+      return;
+    }
+
+    const docRef = doc(db, "newMaster", field);
+    const docSnap = await getDoc(docRef);
+    let currentList = [];
+    if (docSnap.exists()) {
+      currentList = docSnap.data().list || [];
+    }
+
+    // Enhanced uniqueness check considering all fields
+    const isDuplicate = currentList.some(item => {
+      if (field === "shipper" || field === "line") {
+        return item.name === data.name &&
+               item.contactPerson === data.contactPerson &&
+               item.email === data.email &&
+               item.contactNumber === data.contactNumber &&
+               (field === "shipper" ? item.address === data.address : true);
+      } else if (field === "fpod") {
+        return item.name === data.name && item.country === data.country;
+      } else if (field === "vessel") {
+        return item.name === data.name && item.flag === data.flag;
+      } else if (field === "equipmentType") {
+        return item.type === data.type;
+      } else {
+        return item.name === data.name; // For pol, pod
+      }
+    });
+
+    if (!isDuplicate) {
+      if (docSnap.exists()) {
+        await updateDoc(docRef, {
+          list: arrayUnion(data)
+        });
+      } else {
+        await setDoc(docRef, {
+          list: [data]
+        });
+      }
+      toast.success(`${field.charAt(0).toUpperCase() + field.slice(1)} added successfully!`);
+      setNewEntry({ ...newEntry, [field]: data.name || data.type });
+      await fetchMasterData();
+    } else {
+      toast.warn(`${field.charAt(0).toUpperCase() + field.slice(1)} with these details already exists.`);
+    }
+
+    setModalData({
+      ...modalData,
+      [field]: Object.fromEntries(
+        Object.keys(data).map(key => [key, ""])
+      )
+    });
+  };
+
+  const handleAddEntry = async () => {
+    if (
+      newEntry.shipper &&
+      newEntry.line &&
+      newEntry.pol &&
+      newEntry.pod &&
+      newEntry.fpod &&
+      newEntry.vessel &&
+      newEntry.equipmentType
+    ) {
+      const cutOffRegex = /^\d{2}\/\d{2}-\d{4} HRS$/;
+      if (newEntry.portCutOff && !cutOffRegex.test(newEntry.portCutOff)) {
+        toast.error("Port CutOff must be in the format DD/MM-HHMM HRS (e.g., 06/06-1800 HRS)");
+        return;
+      }
+      if (newEntry.siCutOff && !cutOffRegex.test(newEntry.siCutOff)) {
+        toast.error("SI CutOff must be in the format DD/MM-HHMM HRS (e.g., 06/06-1800 HRS)");
+        return;
+      }
+
+      const finalVolume = `${newEntry.qty} x ${newEntry.equipmentType}`;
+      const entryData = { ...newEntry, volume: finalVolume };
+
+      await addDoc(collection(db, "entries"), entryData);
+
+      await confirmAndAddToMaster("shipper", { name: newEntry.shipper });
+      await confirmAndAddToMaster("line", { name: newEntry.line });
+      await confirmAndAddToMaster("pol", { name: newEntry.pol });
+      await confirmAndAddToMaster("pod", { name: newEntry.pod });
+      await confirmAndAddToMaster("fpod", { name: newEntry.fpod });
+      await confirmAndAddToMaster("vessel", { name: newEntry.vessel });
+      await confirmAndAddToMaster("equipmentType", { type: newEntry.equipmentType });
+
+      toast.success("Booking Entry Added Successfully!");
+
+      setNewEntry({
+        bookingDate: "",
+        shipper: "",
+        bookingValidity: "",
+        line: "",
+        bookingNo: "",
+        pol: "",
+        pod: "",
+        fpod: "",
+        containerNo: "",
+        qty: "",
+        equipmentType: "",
+        vessel: "",
+        voyage: "",
+        portCutOff: "",
+        siCutOff: "",
+        etd: ""
+      });
+    } else {
+      toast.error("Please fill all required fields!");
+    }
+  };
+
+  const confirmAndAddToMaster = async (field, data) => {
+    if (!data.name && !data.type) return;
+
+    const docRef = doc(db, "newMaster", field);
+    const docSnap = await getDoc(docRef);
+
+    let currentList = [];
+    if (docSnap.exists()) {
+      currentList = docSnap.data().list || [];
+    }
+
+    if (!currentList.some(item => item.name === data.name || item.type === data.type)) {
+      const confirmAdd = window.confirm(
+        `${data.name || data.type} not found in Master ${field.toUpperCase()}. Do you want to add it?`
+      );
+      if (confirmAdd) {
+        if (docSnap.exists()) {
+          await updateDoc(docRef, {
+            list: arrayUnion(data)
+          });
+        } else {
+          await setDoc(docRef, {
+            list: [data]
+          });
+        }
+        await fetchMasterData();
+      }
+    }
+  };
+
+  const handleChange = (field, value) => {
+    setNewEntry({ ...newEntry, [field]: value });
+  };
+
+  const createSelect = (field, optionsList) => {
+    const options = [
+      { label: `Add a ${field}`, value: "add_new" },
+      ...optionsList.map(s => ({ label: s, value: s }))
+    ];
+
+    const selectedOption = options.find(
+      (option) => option.value === newEntry[field]
+    );
+
+    return (
+      <div className="d-flex align-items-center">
+        <div className="flex-grow-1">
+          <Select
+            options={options}
+            value={
+              selectedOption ||
+              (newEntry[field] ? { label: newEntry[field], value: newEntry[field] } : null)
+            }
+            onChange={(selected) => {
+              if (selected && selected.value === "add_new") {
+                document.getElementById(`${field}Modal`).classList.add('show');
+                document.getElementById(`${field}Modal`).style.display = 'block';
+                document.body.classList.add('modal-open');
+                const backdrop = document.createElement('div');
+                backdrop.className = 'modal-backdrop fade show';
+                document.body.appendChild(backdrop);
+              } else {
+                handleChange(field, selected ? selected.value : "");
+              }
+            }}
+            onInputChange={(inputValue, { action }) => {
+              if (action === "input-change") {
+                handleChange(field, inputValue);
+              }
+            }}
+            isClearable
+            placeholder={`Type or select ${field}...`}
+          />
+        </div>
+        <button
+          type="button"
+          className="btn btn-success ms-2"
+          data-bs-toggle="modal"
+          data-bs-target={`#${field}Modal`}
+        >
+          +
+        </button>
+
+        {/* Modal for adding new master data */}
+        <div
+          className="modal fade"
+          id={`${field}Modal`}
+          tabIndex="-1"
+          aria-labelledby={`${field}ModalLabel`}
+          aria-hidden="true"
+        >
+          <div className="modal-dialog">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title" id={`${field}ModalLabel`}>
+                  Add {field.charAt(0).toUpperCase() + field.slice(1)}
+                </h5>
+                <button
+                  type="button"
+                  className="btn-close"
+                  data-bs-dismiss="modal"
+                  aria-label="Close"
+                ></button>
+              </div>
+              <div className="modal-body">
+                {fieldDefinitions[field].map(({ label, key, type = "text", required }) => (
+                  <div className="mb-3" key={key}>
+                    <label className="form-label">
+                      {label} {required && <span className="text-danger">*</span>}
+                    </label>
+                    <input
+                      type={type}
+                      className="form-control"
+                      placeholder={`Enter ${label}`}
+                      value={modalData[field][key]}
+                      onChange={(e) => handleModalInputChange(field, key, e.target.value)}
+                      required={required}
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="modal-footer">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  data-bs-dismiss="modal"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => handleAddToMaster(field)}
+                  data-bs-dismiss="modal"
+                >
+                  Save {field.charAt(0).toUpperCase() + field.slice(1)}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div>
+      <h2 className="mb-4">Add New Booking Entry</h2>
+      <form className="row g-3">
+        <div className="col-md-4">
+          <label>Booking Date</label>
+          <input
+            type="date"
+            className="form-control"
+            value={newEntry.bookingDate}
+            onChange={(e) => handleChange("bookingDate", e.target.value)}
+          />
+        </div>
+        <div className="col-md-4">
+          <label>Shipper</label>
+          {createSelect("shipper", masterData.shippers)}
+        </div>
+        <div className="col-md-4">
+          <label>Booking Validity</label>
+          <input
+            type="date"
+            className="form-control"
+            value={newEntry.bookingValidity}
+            onChange={(e) => handleChange("bookingValidity", e.target.value)}
+          />
+        </div>
+        <div className="col-md-4">
+          <label>Line</label>
+          {createSelect("line", masterData.lines)}
+        </div>
+        <div className="col-md-4">
+          <label>Booking No</label>
+          <input
+            type="text"
+            className="form-control"
+            value={newEntry.bookingNo}
+            onChange={(e) => handleChange("bookingNo", e.target.value)}
+          />
+        </div>
+        <div className="col-md-4">
+          <label>POL</label>
+          {createSelect("pol", masterData.pols)}
+        </div>
+        <div className="col-md-4">
+          <label>POD</label>
+          {createSelect("pod", masterData.pods)}
+        </div>
+        <div className="col-md-4">
+          <label>FPOD</label>
+          {createSelect("fpod", masterData.fpods)}
+        </div>
+        <div className="col-md-4">
+          <label>Container No</label>
+          <input
+            type="text"
+            className="form-control"
+            value={newEntry.containerNo}
+            onChange={(e) => handleChange("containerNo", e.target.value)}
+          />
+        </div>
+        <div className="col-md-4">
+          <label>Qty</label>
+          <input
+            type="number"
+            className="form-control"
+            value={newEntry.qty}
+            onChange={(e) => handleChange("qty", e.target.value)}
+          />
+        </div>
+        <div className="col-md-4">
+          <label>Equipment Type</label>
+          {createSelect("equipmentType", masterData.equipmentTypes)}
+        </div>
+        <div className="col-md-4">
+          <label>Vessel</label>
+          {createSelect("vessel", masterData.vessels)}
+        </div>
+        <div className="col-md-4">
+          <label>Voyage</label>
+          <input
+            type="text"
+            className="form-control"
+            value={newEntry.voyage}
+            onChange={(e) => handleChange("voyage", e.target.value)}
+          />
+        </div>
+        <div className="col-md-4">
+          <label>Port CutOff (DD/MM-HHMM HRS)</label>
+          <input
+            type="text"
+            className="form-control"
+            placeholder="e.g. 06061800"
+            value={newEntry.portCutOff}
+            onChange={(e) => handleCutOffChange("portCutOff", e.target.value)}
+          />
+        </div>
+        <div className="col-md-4">
+          <label>SI CutOff (DD/MM-HHMM HRS)</label>
+          <input
+            type="text"
+            className="form-control"
+            placeholder="e.g. 06061800"
+            value={newEntry.siCutOff}
+            onChange={(e) => handleCutOffChange("siCutOff", e.target.value)}
+          />
+        </div>
+        <div className="col-md-4">
+          <label>ETD / Sailing</label>
+          <input
+            type="date"
+            className="form-control"
+            value={newEntry.etd}
+            onChange={(e) => handleChange("etd", e.target.value)}
+          />
+        </div>
+        <div className="col-12 mt-3">
+          <button
+            className="btn btn-primary"
+            type="button"
+            onClick={handleAddEntry}
+          >
+            ➕ Add Entry
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+export default AddBooking;

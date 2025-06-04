@@ -1,38 +1,237 @@
-.App {
-  text-align: center;
+/* Reset default margins and padding for full-width layout */
+html, body, * {
+  margin: 0 !important;
+  padding: 0 !important;
+  box-sizing: border-box !important;
+  overflow-x: hidden !important;
 }
 
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
+/* Container */
+.container {
+  max-width: 100% !important;
+  margin: 0 auto !important;
+  padding: 15px !important;
+  font-family: 'Arial', sans-serif !important;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
-  }
+/* Full-width container for table */
+.full-width-container {
+  width: 100vw !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow-x: hidden !important;
 }
 
-.App-header {
-  background-color: #282c34;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
-  color: white;
+/* Heading */
+h1, h2 {
+  text-align: center !important;
+  margin-bottom: 20px !important;
 }
 
-.App-link {
-  color: #61dafb;
+/* Card Styling */
+.card {
+  background: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1) !important;
+  padding: 15px !important;
+  margin-bottom: 20px !important;
+  border-radius: 8px !important;
 }
 
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+/* Master Grid and Form Grid */
+.master-grid, .form-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)) !important;
+  gap: 15px !important;
+}
+
+/* Input Group */
+.input-group {
+  display: flex !important;
+  gap: 10px !important;
+}
+
+.input-group input {
+  flex: 1 !important;
+}
+
+/* Button Styling */
+button {
+  padding: 8px 12px !important;
+  background-color: #007bff !important;
+  color: #fff !important;
+  border: none !important;
+  border-radius: 4px !important;
+  cursor: pointer !important;
+}
+
+.add-entry-btn {
+  margin-top: 20px !important;
+  width: 150px !important;
+  font-size: 16px !important;
+}
+
+/* Table Styling */
+table {
+  width: 100% !important;
+  border-collapse: collapse !important;
+  margin-top: 15px !important;
+  overflow-x: hidden !important;
+  border: 1px solid #000 !important;
+}
+
+th, td {
+  border: 1px solid #000 !important;
+  padding: 1px 2px !important;
+  text-align: center !important;
+}
+
+/* Default Header Background */
+th {
+  background-color: #007bff !important;
+  color: white !important;
+}
+
+/* Zebra Striping for Table */
+tr:nth-child(even) {
+  background-color: #f2f2f2 !important;
+}
+
+/* Table Wrapper */
+.table-wrapper {
+  overflow-x: hidden !important;
+  max-width: 100% !important;
+}
+
+/* Full-width table wrapper */
+.full-width-table-wrapper {
+  width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow-x: hidden !important;
+}
+
+/* Specific Table Class for Fixed Layout */
+.fixed-table {
+  width: 100% !important;
+  table-layout: fixed !important;
+  font-size: 9px !important;
+  overflow-x: hidden !important;
+}
+
+/* Full-width table */
+.full-width-table {
+  width: 100% !important;
+  overflow-x: hidden !important;
+}
+
+/* Table Cells */
+.fixed-table th,
+.fixed-table td {
+  width: 5% !important;
+  min-width: 20px !important;
+  padding: 1px 2px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  text-align: center !important;
+  vertical-align: middle !important;
+}
+
+/* Remove specific percentage-based widths for responsiveness */
+.fixed-table th:nth-child,
+.fixed-table td:nth-child {
+  width: unset !important;
+}
+
+/* Truncate Cell Properly */
+.truncate-cell {
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  cursor: pointer !important;
+  max-width: 100% !important;
+  display: inline-block !important;
+}
+
+/* Mask values by limiting displayed characters */
+.truncate-cell::after {
+  content: "...";
+}
+
+/* Ensure the content is limited to a few characters */
+.fixed-table td.truncate-cell {
+  display: inline-block !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: clip !important;
+  position: relative !important;
+}
+
+/* Checkbox styling */
+.checkbox-input {
+  width: 14px !important;
+  height: 14px !important;
+  margin: 0 auto !important;
+  display: inline-block !important;
+  cursor: pointer !important;
+}
+
+/* Sticky Header */
+.fixed-table th {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 2 !important;
+  background-color: #007bff !important;
+}
+
+/* Alternate Row Color */
+.fixed-table tbody tr:nth-child(even) {
+  background-color: #f9f9f9 !important;
+}
+
+/* Center text */
+.text-center {
+  text-align: center !important;
+}
+
+/* Margin bottom for header */
+.mb-4 {
+  margin-bottom: 1rem !important;
+}
+
+/* Modal Styling */
+.modal-content {
+  border-radius: 8px !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
+}
+
+.modal-header {
+  background-color: #007bff !important;
+  color: white !important;
+}
+
+.modal-title {
+  font-size: 1.25rem !important;
+}
+
+.modal-body {
+  padding: 20px !important;
+}
+
+.modal-footer {
+  border-top: 1px solid #dee2e6 !important;
+}
+
+.form-label {
+  font-weight: 500 !important;
+  margin-bottom: 8px !important;
+}
+
+.form-control {
+  border-radius: 4px !important;
+  padding: 8px !important;
+}
+
+.text-danger {
+  color: #dc3545 !important;
 }
