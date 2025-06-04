@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { db } from "../firebase";
-import { collection, getDocs, doc, updateDoc } from "firebase/firestore";
+import { collection, getDocs, doc, updateDoc, getDoc } from "firebase/firestore";
 import { DataGrid } from "@mui/x-data-grid";
 import { TextField, Checkbox } from "@mui/material";
 import { toast } from "react-toastify";
@@ -9,6 +9,7 @@ function Entries() {
   const [entries, setEntries] = useState([]);
   const [filteredEntries, setFilteredEntries] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [fpodMaster, setFpodMaster] = useState([]); // <-- New
 
   useEffect(() => {
     const fetchEntries = async () => {
@@ -24,7 +25,8 @@ function Entries() {
           pod: entryData.pod?.name || entryData.pod || "",
           fpod: entryData.fpod?.name || entryData.fpod || "",
           vessel: entryData.vessel?.name || entryData.vessel || "",
-          equipmentType: entryData.equipmentType?.type || entryData.equipmentType || ""
+          equipmentType: entryData.equipmentType?.type || entryData.equipmentType || "",
+          isfSent: entryData.isfSent || false, // <-- Default false if not available
         });
       });
 
@@ -32,7 +34,16 @@ function Entries() {
       setFilteredEntries(entryList);
     };
 
+    const fetchFpodMaster = async () => {
+      const docRef = doc(db, "newMaster", "fpod");
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        setFpodMaster(docSnap.data().list || []);
+      }
+    };
+
     fetchEntries();
+    fetchFpodMaster(); // <-- Fetch master FPODs
   }, []);
 
   const handleCheckboxEdit = async (id, field, value) => {
@@ -76,13 +87,21 @@ function Entries() {
     }
   };
 
-  const booleanFields = ["vgmFiled", "siFiled", "firstPrinted", "correctionsFinalised", "blReleased"];
+  const booleanFields = [
+    "vgmFiled", 
+    "siFiled", 
+    "firstPrinted", 
+    "correctionsFinalised", 
+    "blReleased",
+    "isfSent" // <-- Add here so checkbox renders
+  ];
 
+  // Create columns dynamically
   const columns = Object.keys(entryFields).map((key) => ({
     field: key,
     headerName: entryFields[key],
     width: 150,
-    editable: !booleanFields.includes(key), // Allow editing only for non-boolean fields
+    editable: !booleanFields.includes(key),
     renderCell: (params) => {
       if (booleanFields.includes(key)) {
         return (
@@ -96,6 +115,35 @@ function Entries() {
       return params.value || "";
     }
   }));
+
+  // Conditionally add ISF SENT checkbox column
+  if (fpodMaster.length > 0) {
+    columns.push({
+      field: "isfSent",
+      headerName: "ISF SENT",
+      width: 150,
+      editable: true,
+      renderCell: (params) => {
+        const entryFpod = params.row.fpod;
+        const matchingFpod = fpodMaster.find((fpod) => fpod.name === entryFpod);
+
+        // Show checkbox only if FPOD country is USA
+        if (matchingFpod && matchingFpod.country === "USA") {
+          return (
+            <Checkbox
+              checked={!!params.row.isfSent}
+              onChange={(e) =>
+                handleCheckboxEdit(params.row.id, "isfSent", e.target.checked)
+              }
+              color="primary"
+            />
+          );
+        } else {
+          return null; // Empty cell for non-USA
+        }
+      }
+    });
+  }
 
   return (
     <div className="container mt-4">
@@ -120,7 +168,7 @@ function Entries() {
           rowsPerPageOptions={[5, 10, 20]}
           checkboxSelection
           disableSelectionOnClick
-          onCellEditCommit={handleTextEditCommit} // <- Handle text edit here
+          onCellEditCommit={handleTextEditCommit}
         />
       </div>
     </div>
@@ -147,7 +195,8 @@ const entryFields = {
   siFiled: "SI Filed",
   firstPrinted: "First Printed",
   correctionsFinalised: "Corrections Finalised",
-  blReleased: "B/L - Released"
+  blReleased: "B/L - Released",
+  // "isfSent": "ISF SENT" // <-- DO NOT define here, handled dynamically
 };
 
 export default Entries;

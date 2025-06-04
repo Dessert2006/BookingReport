@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { db } from "../firebase";
-import { getDoc, doc, updateDoc } from "firebase/firestore";
+import { getDoc, doc, updateDoc, collection, getDocs } from "firebase/firestore"; // Added getDocs
 import Select from "react-select";
 import { toast } from "react-toastify";
 
@@ -10,6 +10,7 @@ function MasterDataManager() {
   const [editIndex, setEditIndex] = useState(null);
   const [editData, setEditData] = useState({});
   const [newEntry, setNewEntry] = useState({});
+  const [oldName, setOldName] = useState(""); // Added: Track Old Name
 
   const masterOptions = [
     { value: "shipper", label: "Shipper" },
@@ -21,33 +22,14 @@ function MasterDataManager() {
     { value: "equipmentType", label: "Equipment Type" },
   ];
 
-  // Field definitions matching your master form input order
   const fieldDefinitions = {
-    shipper: [
-      "name",            // Shipper Name
-      "contactPerson",   // Contact Person
-      "email",           // Email
-      "contactNumber",   // Contact Number
-      "address",         // Address
-      "salesPerson"      // Sales Person Name
-    ],
-    line: [
-      "name",            // Line Name
-      "contactPerson",   
-      "email", 
-      "contactNumber"
-    ],
-    pol: ["name"],        // POL Name
-    pod: ["name"],        // POD Name
-    fpod: [
-      "name",            // FPOD Name
-      "country"          // Country
-    ],
-    vessel: [
-      "name",            // Vessel Name
-      "flag"             // Flag
-    ],
-    equipmentType: ["type"] // Equipment Type
+    shipper: ["name", "contactPerson", "email", "contactNumber", "address", "salesPerson"],
+    line: ["name", "contactPerson", "email", "contactNumber"],
+    pol: ["name"],
+    pod: ["name"],
+    fpod: ["name", "country"],
+    vessel: ["name", "flag"],
+    equipmentType: ["type"]
   };
 
   useEffect(() => {
@@ -71,6 +53,7 @@ function MasterDataManager() {
   const handleEdit = (index) => {
     setEditIndex(index);
     setEditData(masterList[index]);
+    setOldName(masterList[index].name); // Save old name
   };
 
   const handleSave = async (index) => {
@@ -83,6 +66,14 @@ function MasterDataManager() {
       toast.success("Master data updated successfully!");
       setEditIndex(null);
       setMasterList(updatedList);
+
+      // Trigger sync if name has changed
+      if (selectedMaster === "shipper" || selectedMaster === "line") {
+        if (oldName && oldName !== editData.name) {
+          await syncEntriesWithMaster(oldName, editData.name, selectedMaster);
+        }
+      }
+
     } catch (error) {
       console.error("Error updating document: ", error);
       toast.error("Failed to update master data.");
@@ -133,7 +124,28 @@ function MasterDataManager() {
     }
   };
 
-  // Get field order based on selected master
+  const syncEntriesWithMaster = async (oldName, newName, fieldType) => {
+    const entriesSnapshot = await getDocs(collection(db, "entries"));
+    const updates = [];
+
+    for (const entryDoc of entriesSnapshot.docs) {
+      const entryData = entryDoc.data();
+      const entryId = entryDoc.id;
+
+      if (entryData[fieldType] === oldName) {
+        const docRef = doc(db, "entries", entryId);
+        updates.push(updateDoc(docRef, { [fieldType]: newName }));
+      }
+    }
+
+    if (updates.length > 0) {
+      await Promise.all(updates);
+      toast.success(`Entries synced: ${oldName} ➔ ${newName}`);
+    } else {
+      toast.info("No matching entries found to update.");
+    }
+  };
+
   const getFieldOrder = () => {
     return fieldDefinitions[selectedMaster] || [];
   };
@@ -193,7 +205,7 @@ function MasterDataManager() {
                           onChange={(e) => handleChange(key, e.target.value)}
                         />
                       ) : (
-                        item[key] || "" // show blank if field not filled
+                        item[key] || ""
                       )}
                     </td>
                   ))}
