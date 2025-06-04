@@ -5,7 +5,7 @@ import Select from "react-select";
 import { toast } from "react-toastify";
 
 function MasterDataManager() {
-  const [selectedMaster, setSelectedMaster] = useState(""); // e.g., fpod, shipper
+  const [selectedMaster, setSelectedMaster] = useState("");
   const [masterList, setMasterList] = useState([]);
   const [editIndex, setEditIndex] = useState(null);
   const [editData, setEditData] = useState({});
@@ -20,6 +20,35 @@ function MasterDataManager() {
     { value: "vessel", label: "Vessel" },
     { value: "equipmentType", label: "Equipment Type" },
   ];
+
+  // Field definitions matching your master form input order
+  const fieldDefinitions = {
+    shipper: [
+      "name",            // Shipper Name
+      "contactPerson",   // Contact Person
+      "email",           // Email
+      "contactNumber",   // Contact Number
+      "address",         // Address
+      "salesPerson"      // Sales Person Name
+    ],
+    line: [
+      "name",            // Line Name
+      "contactPerson",   
+      "email", 
+      "contactNumber"
+    ],
+    pol: ["name"],        // POL Name
+    pod: ["name"],        // POD Name
+    fpod: [
+      "name",            // FPOD Name
+      "country"          // Country
+    ],
+    vessel: [
+      "name",            // Vessel Name
+      "flag"             // Flag
+    ],
+    equipmentType: ["type"] // Equipment Type
+  };
 
   useEffect(() => {
     if (selectedMaster) {
@@ -63,7 +92,7 @@ function MasterDataManager() {
   const handleDelete = async (index) => {
     if (!window.confirm("Are you sure you want to delete this entry?")) return;
     const updatedList = [...masterList];
-    updatedList.splice(index, 1); // Remove item
+    updatedList.splice(index, 1);
 
     const docRef = doc(db, "newMaster", selectedMaster);
     try {
@@ -104,6 +133,11 @@ function MasterDataManager() {
     }
   };
 
+  // Get field order based on selected master
+  const getFieldOrder = () => {
+    return fieldDefinitions[selectedMaster] || [];
+  };
+
   return (
     <div className="container mt-4">
       <h2 className="mb-4">Master Data Manager</h2>
@@ -117,10 +151,9 @@ function MasterDataManager() {
 
       {selectedMaster && masterList.length > 0 && (
         <>
-          {/* Add New Entry */}
           <h5>Add New {selectedMaster.toUpperCase()} Entry:</h5>
           <div className="row mb-3">
-            {Object.keys(masterList[0]).map((key) => (
+            {getFieldOrder().map((key) => (
               <div className="col-md-3 mb-2" key={key}>
                 <input
                   type="text"
@@ -138,11 +171,10 @@ function MasterDataManager() {
             </div>
           </div>
 
-          {/* Existing Data */}
           <table className="table table-bordered">
             <thead>
               <tr>
-                {Object.keys(masterList[0]).map((key) => (
+                {getFieldOrder().map((key) => (
                   <th key={key}>{key.toUpperCase()}</th>
                 ))}
                 <th>Actions</th>
@@ -151,7 +183,7 @@ function MasterDataManager() {
             <tbody>
               {masterList.map((item, index) => (
                 <tr key={index}>
-                  {Object.keys(item).map((key) => (
+                  {getFieldOrder().map((key) => (
                     <td key={key}>
                       {editIndex === index ? (
                         <input
@@ -161,7 +193,7 @@ function MasterDataManager() {
                           onChange={(e) => handleChange(key, e.target.value)}
                         />
                       ) : (
-                        item[key]
+                        item[key] || "" // show blank if field not filled
                       )}
                     </td>
                   ))}
