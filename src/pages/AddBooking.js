@@ -15,7 +15,7 @@ function AddBooking() {
     pod: "",
     fpod: "",
     containerNo: "",
-    qty: "",
+    qty: "1", // Default qty set to "1"
     equipmentType: "",
     vessel: "",
     voyage: "",
@@ -88,7 +88,7 @@ function AddBooking() {
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
         newMasterData[field + (field === "equipmentType" ? "s" : "s")] = 
-          (docSnap.data().list || []).map(item =>{
+          (docSnap.data().list || []).map(item => {
             if (field === "fpod") {
               return `${item.name}, ${item.country}`;
             } else {
@@ -158,7 +158,6 @@ function AddBooking() {
       currentList = docSnap.data().list || [];
     }
 
-    // Enhanced uniqueness check considering all fields
     const isDuplicate = currentList.some(item => {
       if (field === "shipper" || field === "line") {
         return item.name === data.name &&
@@ -173,7 +172,7 @@ function AddBooking() {
       } else if (field === "equipmentType") {
         return item.type === data.type;
       } else {
-        return item.name === data.name; // For pol, pod
+        return item.name === data.name;
       }
     });
 
@@ -222,6 +221,14 @@ function AddBooking() {
         return;
       }
 
+      // Ensure qty is at least 1 before submission
+      const numericQty = parseInt(newEntry.qty, 10);
+      if (isNaN(numericQty) || numericQty <= 0) {
+        toast.error("Quantity must be a positive number greater than 0.");
+        setNewEntry({ ...newEntry, qty: "1" });
+        return;
+      }
+
       const finalVolume = `${newEntry.qty} x ${newEntry.equipmentType}`;
       const entryData = { ...newEntry, volume: finalVolume };
 
@@ -247,7 +254,7 @@ function AddBooking() {
         pod: "",
         fpod: "",
         containerNo: "",
-        qty: "",
+        qty: "1",
         equipmentType: "",
         vessel: "",
         voyage: "",
@@ -291,7 +298,24 @@ function AddBooking() {
   };
 
   const handleChange = (field, value) => {
-    setNewEntry({ ...newEntry, [field]: value });
+    if (field === "qty") {
+      // Allow the input to be empty or any number while typing
+      setNewEntry({ ...newEntry, qty: value });
+    } else {
+      setNewEntry({ ...newEntry, [field]: value });
+    }
+  };
+
+  const handleQtyBlur = () => {
+    const numericValue = parseInt(newEntry.qty, 10);
+    if (isNaN(numericValue) || numericValue <= 0) {
+      setNewEntry({ ...newEntry, qty: "1" });
+      if (newEntry.qty !== "") {
+        toast.error("Quantity must be a positive number greater than 0.");
+      }
+    } else {
+      setNewEntry({ ...newEntry, qty: numericValue.toString() });
+    }
   };
 
   const createSelect = (field, optionsList) => {
@@ -343,7 +367,6 @@ function AddBooking() {
           +
         </button>
 
-        {/* Modal for adding new master data */}
         <div
           className="modal fade"
           id={`${field}Modal`}
@@ -472,6 +495,9 @@ function AddBooking() {
             className="form-control"
             value={newEntry.qty}
             onChange={(e) => handleChange("qty", e.target.value)}
+            onBlur={handleQtyBlur}
+            min="1"
+            step="1"
           />
         </div>
         <div className="col-md-4">
