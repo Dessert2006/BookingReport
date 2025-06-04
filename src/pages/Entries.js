@@ -60,7 +60,7 @@ function Entries() {
 
       await updateDoc(docRef, updateData);
       toast.success("Row updated successfully!");
-      return newRow; // important to return the updated row
+      return newRow;
     } catch (error) {
       console.error("Error updating document: ", error);
       toast.error("Failed to update entry.");
@@ -84,10 +84,10 @@ function Entries() {
   };
 
   const booleanFields = [
-    "vgmFiled", 
-    "siFiled", 
-    "firstPrinted", 
-    "correctionsFinalised", 
+    "vgmFiled",
+    "siFiled",
+    "firstPrinted",
+    "correctionsFinalised",
     "blReleased",
     "isfSent"
   ];
@@ -119,9 +119,16 @@ function Entries() {
       width: 150,
       editable: true,
       renderCell: (params) => {
-        const entryFpod = params.row.fpod;
-        const matchingFpod = fpodMaster.find((fpod) => fpod.name === entryFpod);
-        if (matchingFpod && matchingFpod.country === "USA") {
+        const entryFpod = params.row.fpod || "";
+
+        const matchingFpod = fpodMaster.find(
+          (fpod) => fpod.name?.toUpperCase() === entryFpod.toUpperCase()
+        );
+
+        if (
+          (matchingFpod && matchingFpod.country?.toUpperCase() === "USA") ||
+          entryFpod.toUpperCase().includes("USA")
+        ) {
           return (
             <Checkbox
               checked={!!params.row.isfSent}
