@@ -9,7 +9,7 @@ function Entries() {
   const [entries, setEntries] = useState([]);
   const [filteredEntries, setFilteredEntries] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [fpodMaster, setFpodMaster] = useState([]); // <-- New
+  const [fpodMaster, setFpodMaster] = useState([]);
 
   useEffect(() => {
     const fetchEntries = async () => {
@@ -26,7 +26,7 @@ function Entries() {
           fpod: entryData.fpod?.name || entryData.fpod || "",
           vessel: entryData.vessel?.name || entryData.vessel || "",
           equipmentType: entryData.equipmentType?.type || entryData.equipmentType || "",
-          isfSent: entryData.isfSent || false, // <-- Default false if not available
+          isfSent: entryData.isfSent || false,
         });
       });
 
@@ -43,32 +43,28 @@ function Entries() {
     };
 
     fetchEntries();
-    fetchFpodMaster(); // <-- Fetch master FPODs
+    fetchFpodMaster();
   }, []);
 
-  const handleCheckboxEdit = async (id, field, value) => {
-    await handleUpdateFirestore(id, field, value);
-  };
-
-  const handleTextEditCommit = async (params) => {
-    const { id, field, value } = params;
-    await handleUpdateFirestore(id, field, value);
-  };
-
-  const handleUpdateFirestore = async (id, field, value) => {
-    const updatedEntries = entries.map((entry) =>
-      entry.id === id ? { ...entry, [field]: value } : entry
-    );
-    setEntries(updatedEntries);
-    setFilteredEntries(updatedEntries);
-
-    const docRef = doc(db, "entries", id);
+  const handleProcessRowUpdate = async (newRow) => {
     try {
-      await updateDoc(docRef, { [field]: value });
-      toast.success(`${field} updated successfully!`);
+      const updatedEntries = entries.map((entry) =>
+        entry.id === newRow.id ? newRow : entry
+      );
+      setEntries(updatedEntries);
+      setFilteredEntries(updatedEntries);
+
+      const docRef = doc(db, "entries", newRow.id);
+      const updateData = { ...newRow };
+      delete updateData.id; // remove id field before updating Firestore
+
+      await updateDoc(docRef, updateData);
+      toast.success("Row updated successfully!");
+      return newRow; // important to return the updated row
     } catch (error) {
       console.error("Error updating document: ", error);
       toast.error("Failed to update entry.");
+      throw error;
     }
   };
 
@@ -93,10 +89,9 @@ function Entries() {
     "firstPrinted", 
     "correctionsFinalised", 
     "blReleased",
-    "isfSent" // <-- Add here so checkbox renders
+    "isfSent"
   ];
 
-  // Create columns dynamically
   const columns = Object.keys(entryFields).map((key) => ({
     field: key,
     headerName: entryFields[key],
@@ -107,7 +102,7 @@ function Entries() {
         return (
           <Checkbox
             checked={!!params.row[key]}
-            onChange={(e) => handleCheckboxEdit(params.row.id, key, e.target.checked)}
+            onChange={(e) => handleCheckboxEdit(params.row, key, e.target.checked)}
             color="primary"
           />
         );
@@ -116,7 +111,7 @@ function Entries() {
     }
   }));
 
-  // Conditionally add ISF SENT checkbox column
+  // Conditionally add ISF SENT checkbox
   if (fpodMaster.length > 0) {
     columns.push({
       field: "isfSent",
@@ -126,30 +121,32 @@ function Entries() {
       renderCell: (params) => {
         const entryFpod = params.row.fpod;
         const matchingFpod = fpodMaster.find((fpod) => fpod.name === entryFpod);
-
-        // Show checkbox only if FPOD country is USA
         if (matchingFpod && matchingFpod.country === "USA") {
           return (
             <Checkbox
               checked={!!params.row.isfSent}
               onChange={(e) =>
-                handleCheckboxEdit(params.row.id, "isfSent", e.target.checked)
+                handleCheckboxEdit(params.row, "isfSent", e.target.checked)
               }
               color="primary"
             />
           );
         } else {
-          return null; // Empty cell for non-USA
+          return null;
         }
       }
     });
   }
 
+  const handleCheckboxEdit = async (row, field, value) => {
+    const newRow = { ...row, [field]: value };
+    await handleProcessRowUpdate(newRow);
+  };
+
   return (
     <div className="container mt-4">
       <h2 className="mb-4 text-center">Booking Entries</h2>
 
-      {/* Search Bar */}
       <div className="mb-3">
         <TextField
           label="Search..."
@@ -168,7 +165,8 @@ function Entries() {
           rowsPerPageOptions={[5, 10, 20]}
           checkboxSelection
           disableSelectionOnClick
-          onCellEditCommit={handleTextEditCommit}
+          processRowUpdate={handleProcessRowUpdate}
+          onProcessRowUpdateError={(error) => console.error(error)}
         />
       </div>
     </div>
@@ -196,7 +194,6 @@ const entryFields = {
   firstPrinted: "First Printed",
   correctionsFinalised: "Corrections Finalised",
   blReleased: "B/L - Released",
-  // "isfSent": "ISF SENT" // <-- DO NOT define here, handled dynamically
 };
 
 export default Entries;
