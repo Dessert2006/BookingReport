@@ -1,9 +1,16 @@
 import React, { useState, useEffect } from "react";
 import { db } from "../firebase";
-import { collection, getDocs, doc, updateDoc, getDoc, addDoc, deleteDoc } from "firebase/firestore";
+import { collection, getDocs, doc, updateDoc, getDoc, addDoc, deleteDoc, query, where } from "firebase/firestore";
 import { DataGrid } from "@mui/x-data-grid";
 import { TextField, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, Button, FormControlLabel } from "@mui/material";
 import { toast } from "react-toastify";
+
+// CSS for highlighting rows
+const styles = `
+  .highlight-row {
+    background-color: #FFFF00; /* Light yellow background */
+  }
+`;
 
 function Entries() {
   const [entries, setEntries] = useState([]);
@@ -23,11 +30,52 @@ function Entries() {
     equipmentType: []
   });
 
-  const [openDialog, setOpenDialog] = useState(false);
+  const [openDialog, setOpenDialog] = useState(false); // For BL No dialog
   const [currentRow, setCurrentRow] = useState(null);
   const [blNoInput, setBlNoInput] = useState("");
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [rowToComplete, setRowToComplete] = useState(null);
+
+  // State for SOB date dialog
+  const [sobDialogOpen, setSobDialogOpen] = useState(false);
+  const [sobDateInput, setSobDateInput] = useState("");
+  const [rowForSob, setRowForSob] = useState(null);
+
+  const formatCutOffInput = (value) => {
+    if (!value) return ""; // Return empty string if value is empty
+
+    const numericValue = value.replace(/[^0-9]/g, "");
+    if (numericValue.length === 8) {
+      const day = numericValue.substring(0, 2);
+      const month = numericValue.substring(2, 4);
+      const hour = numericValue.substring(4, 6);
+      const minute = numericValue.substring(6, 8);
+      const dayNum = parseInt(day, 10);
+      const monthNum = parseInt(month, 10);
+      const hourNum = parseInt(hour, 10);
+      const minuteNum = parseInt(minute, 10);
+
+      if (
+        dayNum >= 1 && dayNum <= 31 &&
+        monthNum >= 1 && monthNum <= 12 &&
+        hourNum >= 0 && hourNum <= 23 &&
+        minuteNum >= 0 && minuteNum <= 59
+      ) {
+        return `${day}/${month}-${hour}${minute} HRS`;
+      } else {
+        toast.error("Invalid date or time. Please enter a valid DDMMHHMM (e.g., 06061800 for 06/06-1800 HRS)");
+        return value; // Return original value if invalid
+      }
+    }
+    return numericValue; // Return partial input if not yet 8 digits
+  };
+
+  // Function to format dates from YYYY-MM-DD to DD-MM-YYYY
+  const formatDate = (dateStr) => {
+    if (!dateStr) return "";
+    const [year, month, day] = dateStr.split("-");
+    return `${day}-${month}-${year}`;
+  };
 
   useEffect(() => {
     const fetchEntries = async () => {
@@ -47,7 +95,11 @@ function Entries() {
           vessel: entryData.vessel?.name || entryData.vessel || "",
           equipmentType: entryData.equipmentType?.type || entryData.equipmentType || "",
           isfSent: entryData.isfSent || false,
-          blNo: entryData.blNo || ""
+          sob: entryData.sob || false,
+          sobDate: entryData.sobDate || "",
+          finalDG: entryData.finalDG || false,
+          blNo: entryData.blNo || "",
+          invoiceNo: ""
         });
         if (entryData.location) {
           locationSet.add(entryData.location);
@@ -90,19 +142,100 @@ function Entries() {
 
   const handleProcessRowUpdate = async (newRow, oldRow) => {
     try {
-      const updatedEntries = entries.map((entry) =>
-        entry.id === newRow.id ? newRow : entry
-      );
-      setEntries(updatedEntries);
-      applyFilters(updatedEntries, searchQuery, selectedLocations);
+      // Format portCutOff and siCutOff
+      const formattedPortCutOff = newRow.portCutOff ? formatCutOffInput(newRow.portCutOff) : newRow.portCutOff;
+      const formattedSiCutOff = newRow.siCutOff ? formatCutOffInput(newRow.siCutOff) : newRow.siCutOff;
 
-      const docRef = doc(db, "entries", newRow.id);
-      const updateData = { ...newRow };
-      delete updateData.id;
+      // Validate the formatted values
+      const cutOffRegex = /^\d{2}\/\d{2}-\d{4} HRS$/;
+      if (formattedPortCutOff && !cutOffRegex.test(formattedPortCutOff)) {
+        toast.error("Port CutOff must be in the format DD/MM-HHMM HRS (e.g., 06/06-1800 HRS)");
+        throw new Error("Invalid Port CutOff format");
+      }
+      if (formattedSiCutOff && !cutOffRegex.test(formattedSiCutOff)) {
+        toast.error("SI CutOff must be in the format DD/MM-HHMM HRS (e.g., 06/06-1800 HRS)");
+        throw new Error("Invalid SI CutOff format");
+      }
 
-      await updateDoc(docRef, updateData);
-      toast.success("Row updated successfully!");
-      return newRow;
+      const formattedRow = {
+        ...newRow,
+        portCutOff: formattedPortCutOff,
+        siCutOff: formattedSiCutOff
+      };
+
+      // Check if portCutOff or siCutOff has changed
+      const portCutOffChanged = oldRow.portCutOff !== formattedPortCutOff;
+      const siCutOffChanged = oldRow.siCutOff !== formattedSiCutOff;
+
+      if (portCutOffChanged || siCutOffChanged) {
+        // Find other entries with the same vessel, voyage, and pol
+        const q = query(
+          collection(db, "entries"),
+          where("vessel", "==", formattedRow.vessel || ""),
+          where("voyage", "==", formattedRow.voyage || ""),
+          where("pol", "==", formattedRow.pol || "")
+        );
+        const querySnapshot = await getDocs(q);
+
+        // Update all matching entries
+        const updatedEntries = [...entries];
+        const batchUpdates = [];
+
+        querySnapshot.forEach((docSnap) => {
+          const entryId = docSnap.id;
+          if (entryId !== formattedRow.id) { // Skip the current row
+            const updateData = {
+              portCutOff: portCutOffChanged ? formattedPortCutOff : docSnap.data().portCutOff,
+              siCutOff: siCutOffChanged ? formattedSiCutOff : docSnap.data().siCutOff
+            };
+            const docRef = doc(db, "entries", entryId);
+            batchUpdates.push(updateDoc(docRef, updateData));
+
+            // Update local state
+            const entryIndex = updatedEntries.findIndex(entry => entry.id === entryId);
+            if (entryIndex !== -1) {
+              updatedEntries[entryIndex] = {
+                ...updatedEntries[entryIndex],
+                ...updateData
+              };
+            }
+          }
+        });
+
+        // Update the current row in local state
+        const currentRowIndex = updatedEntries.findIndex(entry => entry.id === formattedRow.id);
+        if (currentRowIndex !== -1) {
+          updatedEntries[currentRowIndex] = formattedRow;
+        }
+
+        // Update the current row in Firestore
+        const docRef = doc(db, "entries", formattedRow.id);
+        const updateData = { ...formattedRow };
+        delete updateData.id;
+        batchUpdates.push(updateDoc(docRef, updateData));
+
+        // Execute all updates
+        await Promise.all(batchUpdates);
+
+        setEntries(updatedEntries);
+        applyFilters(updatedEntries, searchQuery, selectedLocations);
+        toast.success("Row(s) updated successfully!");
+      } else {
+        // If no cut-off changes, update only the current row
+        const updatedEntries = entries.map((entry) =>
+          entry.id === formattedRow.id ? formattedRow : entry
+        );
+        setEntries(updatedEntries);
+        applyFilters(updatedEntries, searchQuery, selectedLocations);
+
+        const docRef = doc(db, "entries", formattedRow.id);
+        const updateData = { ...formattedRow };
+        delete updateData.id;
+        await updateDoc(docRef, updateData);
+        toast.success("Row updated successfully!");
+      }
+
+      return formattedRow;
     } catch (error) {
       console.error("Error updating document: ", error);
       toast.error("Failed to update entry.");
@@ -145,10 +278,12 @@ function Entries() {
   const booleanFields = [
     "vgmFiled",
     "siFiled",
+    "finalDG", // Added FINAL DG to boolean fields
     "firstPrinted",
     "correctionsFinalised",
     "blReleased",
-    "isfSent"
+    "isfSent",
+    "sob" // Added SOB to boolean fields
   ];
 
   const prerequisiteFields = [
@@ -156,7 +291,6 @@ function Entries() {
     "siFiled",
     "firstPrinted",
     "correctionsFinalised"
-    // "isfSent" is conditionally included in handleCheckboxEdit
   ];
 
   const masterFields = [
@@ -183,6 +317,7 @@ function Entries() {
     ...Object.keys(entryFields).map((key) => {
       const isMasterField = masterFields.includes(key);
       const isBooleanField = booleanFields.includes(key);
+      const isDateField = ["bookingDate", "bookingValidity", "etd"].includes(key);
       return {
         field: key,
         headerName: entryFields[key],
@@ -191,6 +326,15 @@ function Entries() {
         ...(isMasterField && {
           type: "singleSelect",
           valueOptions: masterData[key],
+        }),
+        ...(isDateField && {
+          valueFormatter: ({ value }) => formatDate(value),
+          type: "date",
+          valueParser: (value) => {
+            if (!value) return "";
+            const [day, month, year] = value.split("-");
+            return `${year}-${month}-${day}`;
+          },
         }),
         renderCell: (params) => {
           if (key === "firstPrinted") {
@@ -212,13 +356,43 @@ function Entries() {
               />
             );
           }
+          if (isDateField) {
+            return formatDate(params.value) || "";
+          }
           return params.value || "";
         }
       };
     })
   ];
 
-  // Insert ISF SENT column after First Printed
+  // Insert "FINAL DG" column after "SI FILED"
+  const siFiledIndex = columns.findIndex((col) => col.field === "siFiled");
+  if (siFiledIndex !== -1) {
+    columns.splice(siFiledIndex + 1, 0, {
+      field: "finalDG",
+      headerName: "FINAL DG",
+      width: 150,
+      editable: true,
+      renderCell: (params) => {
+        const volume = params.row.volume || "";
+        if (volume.toUpperCase().includes("HAZ")) {
+          return (
+            <Checkbox
+              checked={!!params.row.finalDG}
+              onChange={(e) =>
+                handleCheckboxEdit(params.row, "finalDG", e.target.checked)
+              }
+              color="primary"
+            />
+          );
+        } else {
+          return null;
+        }
+      }
+    });
+  }
+
+  // Insert "ISF SENT" and "SOB" columns after "FIRST PRINTED"
   if (fpodMaster.length > 0) {
     const firstPrintedIndex = columns.findIndex((col) => col.field === "firstPrinted");
     columns.splice(firstPrintedIndex + 1, 0, {
@@ -250,6 +424,22 @@ function Entries() {
         }
       }
     });
+
+    // Insert "SOB" column after "ISF SENT"
+    columns.splice(firstPrintedIndex + 2, 0, {
+      field: "sob",
+      headerName: "SOB",
+      width: 150,
+      editable: true,
+      renderCell: (params) => (
+        <Checkbox
+          checked={!!params.row.sob}
+          onChange={(e) => handleSobCheckbox(params.row, e.target.checked)}
+          color="primary"
+          disabled={params.row.sob} // Disable after checking
+        />
+      )
+    });
   }
 
   columns.push({
@@ -259,12 +449,45 @@ function Entries() {
     editable: true
   });
 
+  const handleSobCheckbox = (row, checked) => {
+    if (checked) {
+      setRowForSob(row);
+      setSobDateInput("");
+      setSobDialogOpen(true);
+    }
+  };
+
+  const handleSobSubmit = async () => {
+    if (!sobDateInput) {
+      toast.error("Please select a date for SOB.");
+      return;
+  }
+
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(sobDateInput)) {
+      toast.error("Invalid date format. Please use YYYY-MM-DD format.");
+      return;
+    }
+
+    const formattedSobDate = formatDate(sobDateInput); // Convert YYYY-MM-DD to DD-MM-YYYY for display
+    const newRow = { ...rowForSob, sob: true, sobDate: formattedSobDate };
+    await handleProcessRowUpdate(newRow, rowForSob);
+    setSobDialogOpen(false);
+    setRowForSob(null);
+    setSobDateInput("");
+  };
+
+  const handleSobCancel = () => {
+    setSobDialogOpen(false);
+    setRowForSob(null);
+    setSobDateInput("");
+  };
+
   const handleCheckboxEdit = async (row, field, value) => {
     if (field === "firstPrinted" && value) {
       setCurrentRow(row);
       setOpenDialog(true);
     } else if (field === "blReleased" && value) {
-      // Check if all prerequisite fields are ticked
       const fieldsToCheck = [...prerequisiteFields];
       const entryFpod = row.fpod || "";
       const matchingFpod = fpodMaster.find(
@@ -283,10 +506,9 @@ function Entries() {
 
       if (!allPrerequisitesMet) {
         toast.error("All previous steps must be completed before releasing B/L.");
-        return; // Prevent the checkbox from being ticked
+        return;
       }
 
-      // Show confirmation dialog
       setRowToComplete(row);
       setConfirmDialogOpen(true);
     } else {
@@ -299,7 +521,6 @@ function Entries() {
     if (!rowToComplete) return;
 
     try {
-      // Update the row to mark blReleased as true
       const updatedRow = { ...rowToComplete, blReleased: true };
       const updatedEntries = entries.map((entry) =>
         entry.id === updatedRow.id ? updatedRow : entry
@@ -307,15 +528,12 @@ function Entries() {
       setEntries(updatedEntries);
       applyFilters(updatedEntries, searchQuery, selectedLocations);
 
-      // Move to completedFiles collection
       const entryData = { ...updatedRow };
-      delete entryData.id; // Remove the id field for the new document
+      delete entryData.id;
       await addDoc(collection(db, "completedFiles"), entryData);
 
-      // Delete from entries collection
       await deleteDoc(doc(db, "entries", updatedRow.id));
 
-      // Update local state to remove the entry
       const newEntries = entries.filter((entry) => entry.id !== updatedRow.id);
       setEntries(newEntries);
       applyFilters(newEntries, searchQuery, selectedLocations);
@@ -324,7 +542,6 @@ function Entries() {
     } catch (error) {
       console.error("Error completing entry: ", error);
       toast.error("Failed to mark as B/L Released.");
-      // Revert blReleased if the operation fails
       const revertedEntries = entries.map((entry) =>
         entry.id === rowToComplete.id ? { ...entry, blReleased: false } : entry
       );
@@ -337,7 +554,6 @@ function Entries() {
   };
 
   const handleCancelComplete = () => {
-    // Revert blReleased to false
     if (rowToComplete) {
       const updatedEntries = entries.map((entry) =>
         entry.id === rowToComplete.id ? { ...entry, blReleased: false } : entry
@@ -367,8 +583,15 @@ function Entries() {
     setOpenDialog(false);
   };
 
+  // Function to determine row class for highlighting
+  const getRowClassName = (params) => {
+    const row = params.row;
+    return !row.portCutOff && !row.siCutOff ? "highlight-row" : "";
+  };
+
   return (
     <div className="container mt-4">
+      <style>{styles}</style>
       <h2 className="mb-4 text-center">Booking Entries</h2>
 
       <div className="mb-3">
@@ -410,9 +633,11 @@ function Entries() {
           disableSelectionOnClick
           processRowUpdate={handleProcessRowUpdate}
           onProcessRowUpdateError={(error) => console.error(error)}
+          getRowClassName={getRowClassName}
         />
       </div>
 
+      {/* Dialog for BL No */}
       <Dialog open={openDialog} onClose={handleDialogClose}>
         <DialogTitle>Enter BL No</DialogTitle>
         <DialogContent>
@@ -432,6 +657,28 @@ function Entries() {
         </DialogActions>
       </Dialog>
 
+      {/* Dialog for SOB Date */}
+      <Dialog open={sobDialogOpen} onClose={handleSobCancel}>
+        <DialogTitle>Enter SOB Date</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="SOB Date"
+            type="date"
+            fullWidth
+            value={sobDateInput}
+            onChange={(e) => setSobDateInput(e.target.value)}
+            InputLabelProps={{ shrink: true }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleSobCancel}>Cancel</Button>
+          <Button onClick={handleSobSubmit}>Submit</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog for Confirming B/L Release */}
       <Dialog open={confirmDialogOpen} onClose={handleCancelComplete}>
         <DialogTitle>Confirm B/L Release</DialogTitle>
         <DialogContent>
@@ -444,13 +691,6 @@ function Entries() {
           </Button>
         </DialogActions>
       </Dialog>
-
-      {/* To add "Completed Files" section to the menu, add a new route in your navigation setup.
-          Example with react-router-dom:
-          <NavLink to="/completed-files">Completed Files</NavLink>
-          Then define the route in your router:
-          <Route path="/completed-files" element={<CompletedFiles />} />
-          See CompletedFiles.js for the component implementation. */}
     </div>
   );
 }
