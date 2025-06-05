@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { db } from "../firebase";
-import { collection, addDoc, getDoc, doc, updateDoc, setDoc, arrayUnion } from "firebase/firestore";
+import { collection, addDoc, getDoc, doc, updateDoc, setDoc, arrayUnion, getDocs, query, where } from "firebase/firestore";
 import Select from "react-select";
 import { toast } from "react-toastify";
 
@@ -137,14 +137,14 @@ function AddBooking() {
   };
 
   const handleCutOffChange = (field, value) => {
-    const formattedValue = formatCutOffInput(value);
+    const formattedValue = formatCutOffInput(value.toUpperCase());
     setNewEntry({ ...newEntry, [field]: formattedValue });
   };
 
   const handleModalInputChange = (field, subfield, value) => {
     setModalData({
       ...modalData,
-      [field]: { ...modalData[field], [subfield]: value }
+      [field]: { ...modalData[field], [subfield]: value.toUpperCase() }
     });
   };
 
@@ -192,7 +192,7 @@ function AddBooking() {
         });
       }
       toast.success(`${field.charAt(0).toUpperCase() + field.slice(1)} added successfully!`);
-      setNewEntry({ ...newEntry, [field]: data.name || data.type });
+      setNewEntry({ ...newEntry, [field]: (data.name || data.type).toUpperCase() });
       await fetchMasterData();
     } else {
       toast.warn(`${field.charAt(0).toUpperCase() + field.slice(1)} with these details already exists.`);
@@ -206,6 +206,12 @@ function AddBooking() {
     });
   };
 
+  const checkBookingNoExists = async (bookingNo) => {
+    const q = query(collection(db, "entries"), where("bookingNo", "==", bookingNo));
+    const querySnapshot = await getDocs(q);
+    return !querySnapshot.empty;
+  };
+
   const handleAddEntry = async () => {
     if (
       newEntry.location &&
@@ -215,8 +221,16 @@ function AddBooking() {
       newEntry.pod &&
       newEntry.fpod &&
       newEntry.vessel &&
-      newEntry.equipmentType
+      newEntry.equipmentType &&
+      newEntry.bookingNo
     ) {
+      // Check if bookingNo already exists
+      const bookingNoExists = await checkBookingNoExists(newEntry.bookingNo);
+      if (bookingNoExists) {
+        toast.error("Booking No already exists. Cannot proceed.");
+        return;
+      }
+
       const cutOffRegex = /^\d{2}\/\d{2}-\d{4} HRS$/;
       if (newEntry.portCutOff && !cutOffRegex.test(newEntry.portCutOff)) {
         toast.error("Port CutOff must be in the format DD/MM-HHMM HRS (e.g., 06/06-1800 HRS)");
@@ -307,8 +321,10 @@ function AddBooking() {
   const handleChange = (field, value) => {
     if (field === "qty") {
       setNewEntry({ ...newEntry, qty: value });
-    } else {
+    } else if (field === "bookingDate" || field === "bookingValidity" || field === "etd") {
       setNewEntry({ ...newEntry, [field]: value });
+    } else {
+      setNewEntry({ ...newEntry, [field]: value.toUpperCase() });
     }
   };
 
