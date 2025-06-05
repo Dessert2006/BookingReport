@@ -101,8 +101,18 @@ function Entries() {
     field: key,
     headerName: entryFields[key],
     width: 150,
-    editable: !booleanFields.includes(key),
+    editable: !booleanFields.includes(key) || key === "blNo", // <-- BL No editable
     renderCell: (params) => {
+      if (key === "firstPrinted") {
+        return (
+          <Checkbox
+            checked={!!params.row[key]}
+            disabled={params.row[key]} // <-- DISABLE if already ticked
+            onChange={(e) => handleCheckboxEdit(params.row, key, e.target.checked)}
+            color="primary"
+          />
+        );
+      }
       if (booleanFields.includes(key)) {
         return (
           <Checkbox
@@ -150,12 +160,12 @@ function Entries() {
     });
   }
 
-  // Finally add BL NO at last
+  // Finally add BL NO at last (editable)
   columns.push({
     field: "blNo",
     headerName: "BL No",
     width: 200,
-    editable: false
+    editable: true
   });
 
   const handleCheckboxEdit = async (row, field, value) => {
