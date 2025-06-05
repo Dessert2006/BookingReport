@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { db } from "../firebase";
 import { collection, getDocs, doc, updateDoc, getDoc } from "firebase/firestore";
 import { DataGrid } from "@mui/x-data-grid";
-import { TextField, Checkbox } from "@mui/material";
+import { TextField, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, Button } from "@mui/material";
 import { toast } from "react-toastify";
 
 function Entries() {
@@ -10,6 +10,10 @@ function Entries() {
   const [filteredEntries, setFilteredEntries] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [fpodMaster, setFpodMaster] = useState([]);
+
+  const [openDialog, setOpenDialog] = useState(false);
+  const [currentRow, setCurrentRow] = useState(null);
+  const [blNoInput, setBlNoInput] = useState("");
 
   useEffect(() => {
     const fetchEntries = async () => {
@@ -27,6 +31,7 @@ function Entries() {
           vessel: entryData.vessel?.name || entryData.vessel || "",
           equipmentType: entryData.equipmentType?.type || entryData.equipmentType || "",
           isfSent: entryData.isfSent || false,
+          blNo: entryData.blNo || ""   // <-- BL NO initialize
         });
       });
 
@@ -111,7 +116,7 @@ function Entries() {
     }
   }));
 
-  // Conditionally add ISF SENT checkbox
+  // Conditionally add ISF SENT checkbox (for USA FPOD only)
   if (fpodMaster.length > 0) {
     columns.push({
       field: "isfSent",
@@ -145,9 +150,40 @@ function Entries() {
     });
   }
 
+  // Finally add BL NO at last
+  columns.push({
+    field: "blNo",
+    headerName: "BL No",
+    width: 200,
+    editable: false
+  });
+
   const handleCheckboxEdit = async (row, field, value) => {
-    const newRow = { ...row, [field]: value };
+    if (field === "firstPrinted" && value) {
+      setCurrentRow(row);
+      setOpenDialog(true);
+    } else {
+      const newRow = { ...row, [field]: value };
+      await handleProcessRowUpdate(newRow);
+    }
+  };
+
+  const handleDialogSubmit = async () => {
+    if (blNoInput.trim() === "") {
+      toast.error("BL No cannot be empty!");
+      return;
+    }
+    const newRow = { ...currentRow, firstPrinted: true, blNo: blNoInput.trim() };
     await handleProcessRowUpdate(newRow);
+    setBlNoInput("");
+    setCurrentRow(null);
+    setOpenDialog(false);
+  };
+
+  const handleDialogClose = () => {
+    setBlNoInput("");
+    setCurrentRow(null);
+    setOpenDialog(false);
   };
 
   return (
@@ -176,6 +212,26 @@ function Entries() {
           onProcessRowUpdateError={(error) => console.error(error)}
         />
       </div>
+
+      {/* Dialog for BL No */}
+      <Dialog open={openDialog} onClose={handleDialogClose}>
+        <DialogTitle>Enter BL No</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="BL No"
+            type="text"
+            fullWidth
+            value={blNoInput}
+            onChange={(e) => setBlNoInput(e.target.value)}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleDialogClose}>Cancel</Button>
+          <Button onClick={handleDialogSubmit}>Submit</Button>
+        </DialogActions>
+      </Dialog>
     </div>
   );
 }
