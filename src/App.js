@@ -3,9 +3,10 @@ import { BrowserRouter as Router, Routes, Route, Link } from "react-router-dom";
 import MasterData from "./pages/MasterData";
 import AddBooking from "./pages/AddBooking";
 import Entries from "./pages/Entries";
-import MasterDataManager from "./pages/MasterDataManager"; // ⬅️ Import for Manage Master
+import MasterDataManager from "./pages/MasterDataManager";
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import CompletedFiles from "./pages/CompletedFiles";
 
 function App() {
   return (
@@ -26,7 +27,10 @@ function App() {
                   <Link className="nav-link" to="/entries">View Entries</Link>
                 </li>
                 <li className="nav-item">
-                  <Link className="nav-link" to="/manage-master">Manage Master Data</Link> {/* ⬅️ New Menu Link */}
+                  <Link className="nav-link" to="/manage-master">Manage Master Data</Link>
+                </li>
+                <li className="nav-item">
+                  <Link className="nav-link" to="/completed-files">Completed Files</Link>
                 </li>
               </ul>
             </div>
@@ -39,11 +43,11 @@ function App() {
             <Route path="/master" element={<MasterData />} />
             <Route path="/booking" element={<AddBooking />} />
             <Route path="/entries" element={<Entries />} />
-            <Route path="/manage-master" element={<MasterDataManager />} /> {/* ⬅️ New Route */}
+            <Route path="/manage-master" element={<MasterDataManager />} />
+            <Route path="/completed-files" element={<CompletedFiles />} />
           </Routes>
         </div>
 
-        {/* ✅ Correct position for ToastContainer */}
         <ToastContainer position="bottom-right" autoClose={3000} />
       </div>
     </Router>

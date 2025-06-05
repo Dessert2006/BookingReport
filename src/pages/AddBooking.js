@@ -6,6 +6,7 @@ import { toast } from "react-toastify";
 
 function AddBooking() {
   const [newEntry, setNewEntry] = useState({
+    location: "",
     bookingDate: "",
     shipper: "",
     bookingValidity: "",
@@ -25,6 +26,7 @@ function AddBooking() {
   });
 
   const [masterData, setMasterData] = useState({
+    locations: [],
     shippers: [],
     lines: [],
     pols: [],
@@ -35,6 +37,7 @@ function AddBooking() {
   });
 
   const [modalData, setModalData] = useState({
+    location: { name: "" },
     shipper: { name: "", contactPerson: "", email: "", contactNumber: "", address: "", salesPerson: "" },
     line: { name: "", contactPerson: "", email: "", contactNumber: "" },
     pol: { name: "" },
@@ -45,6 +48,7 @@ function AddBooking() {
   });
 
   const fieldDefinitions = {
+    location: [{ label: "Location Name", key: "name", required: true }],
     shipper: [
       { label: "Shipper Name", key: "name", required: true },
       { label: "Contact Person", key: "contactPerson" },
@@ -73,8 +77,9 @@ function AddBooking() {
   };
 
   const fetchMasterData = async () => {
-    const masterFields = ["shipper", "line", "pol", "pod", "fpod", "vessel", "equipmentType"];
+    const masterFields = ["location", "shipper", "line", "pol", "pod", "fpod", "vessel", "equipmentType"];
     let newMasterData = {
+      locations: [],
       shippers: [],
       lines: [],
       pols: [],
@@ -203,6 +208,7 @@ function AddBooking() {
 
   const handleAddEntry = async () => {
     if (
+      newEntry.location &&
       newEntry.shipper &&
       newEntry.line &&
       newEntry.pol &&
@@ -221,7 +227,6 @@ function AddBooking() {
         return;
       }
 
-      // Ensure qty is at least 1 before submission
       const numericQty = parseInt(newEntry.qty, 10);
       if (isNaN(numericQty) || numericQty <= 0) {
         toast.error("Quantity must be a positive number greater than 0.");
@@ -234,6 +239,7 @@ function AddBooking() {
 
       await addDoc(collection(db, "entries"), entryData);
 
+      await confirmAndAddToMaster("location", { name: newEntry.location });
       await confirmAndAddToMaster("shipper", { name: newEntry.shipper });
       await confirmAndAddToMaster("line", { name: newEntry.line });
       await confirmAndAddToMaster("pol", { name: newEntry.pol });
@@ -245,6 +251,7 @@ function AddBooking() {
       toast.success("Booking Entry Added Successfully!");
 
       setNewEntry({
+        location: "",
         bookingDate: "",
         shipper: "",
         bookingValidity: "",
@@ -299,7 +306,6 @@ function AddBooking() {
 
   const handleChange = (field, value) => {
     if (field === "qty") {
-      // Allow the input to be empty or any number while typing
       setNewEntry({ ...newEntry, qty: value });
     } else {
       setNewEntry({ ...newEntry, [field]: value });
@@ -432,6 +438,10 @@ function AddBooking() {
     <div>
       <h2 className="mb-4">Add New Booking Entry</h2>
       <form className="row g-3">
+        <div className="col-md-4">
+          <label>Location <span className="text-danger">*</span></label>
+          {createSelect("location", masterData.locations)}
+        </div>
         <div className="col-md-4">
           <label>Booking Date</label>
           <input
