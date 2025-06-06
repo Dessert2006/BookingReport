@@ -157,6 +157,19 @@ function AddBooking() {
     }
   };
 
+  const closeModal = (field) => {
+    const modal = document.getElementById(`${field}Modal`);
+    if (modal) {
+      modal.classList.remove('show');
+      modal.style.display = 'none';
+    }
+    document.body.classList.remove('modal-open');
+    const backdrop = document.querySelector('.modal-backdrop');
+    if (backdrop) {
+      backdrop.remove();
+    }
+  };
+
   const handleAddToMaster = async (field) => {
     const data = modalData[field];
     const requiredFields = fieldDefinitions[field].filter(f => f.required).map(f => f.key);
@@ -227,6 +240,18 @@ function AddBooking() {
         Object.keys(data).map(key => [key, Array.isArray(data[key]) ? [] : ""])
       )
     });
+
+    closeModal(field);
+  };
+
+  const handleModalClose = (field) => {
+    setModalData({
+      ...modalData,
+      [field]: Object.fromEntries(
+        Object.keys(modalData[field]).map(key => [key, Array.isArray(modalData[field][key]) ? [] : ""])
+      )
+    });
+    closeModal(field);
   };
 
   const checkBookingNoExists = async (bookingNo) => {
@@ -435,7 +460,7 @@ function AddBooking() {
                 <button
                   type="button"
                   className="btn-close"
-                  data-bs-dismiss="modal"
+                  onClick={() => handleModalClose(field)}
                   aria-label="Close"
                 ></button>
               </div>
@@ -460,7 +485,7 @@ function AddBooking() {
                 <button
                   type="button"
                   className="btn btn-secondary"
-                  data-bs-dismiss="modal"
+                  onClick={() => handleModalClose(field)}
                 >
                   Close
                 </button>
@@ -468,7 +493,6 @@ function AddBooking() {
                   type="button"
                   className="btn btn-primary"
                   onClick={() => handleAddToMaster(field)}
-                  data-bs-dismiss="modal"
                 >
                   Save {field.charAt(0).toUpperCase() + field.slice(1)}
                 </button>
