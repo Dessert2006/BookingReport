@@ -100,6 +100,7 @@ function Entries() {
         }
 
         entryList.push({
+          id: docSnap.id,
           ...entryData,
           location: entryData.location?.name || entryData.location || "",
           shipper: shipperObj, // Store the full shipper object
@@ -446,11 +447,11 @@ function Entries() {
       renderCell: (params) => {
         const entryFpod = params.row.fpod || "";
         const matchingFpod = fpodMaster.find(
-          (fpod) => fpod.name?.toUpperCase() === entryFpod.toUpperCase()
+          (fpod) => fpod.toUpperCase() === entryFpod.toUpperCase()
         );
 
         if (
-          (matchingFpod && matchingFpod.country?.toUpperCase() === "USA") ||
+          (matchingFpod && matchingFpod.toUpperCase().includes("USA")) ||
           entryFpod.toUpperCase().includes("USA")
         ) {
           return (
@@ -580,10 +581,10 @@ function Entries() {
       const fieldsToCheck = [...prerequisiteFields];
       const entryFpod = row.fpod || "";
       const matchingFpod = fpodMaster.find(
-        (fpod) => fpod.name?.toUpperCase() === entryFpod.toUpperCase()
+        (fpod) => fpod.toUpperCase() === entryFpod.toUpperCase()
       );
       if (
-        (matchingFpod && matchingFpod.country?.toUpperCase() === "USA") ||
+        (matchingFpod && matchingFpod.toUpperCase().includes("USA")) ||
         entryFpod.toUpperCase().includes("USA")
       ) {
         fieldsToCheck.push("isfSent");
@@ -799,12 +800,12 @@ function Entries() {
 }
 
 const entryFields = {
+  shipper: "Customer",
+  salesPersonName: "Sales",
   bookingDate: "Booking Date",
-  shipper: "Shipper",
-  salesPersonName: "Salesperson Name",
+  bookingNo: "Booking No",
   bookingValidity: "Booking Validity",
   line: "Line",
-  bookingNo: "Booking No",
   pol: "POL",
   pod: "POD",
   fpod: "FPOD",

@@ -16,7 +16,7 @@ function AddBooking() {
     pod: "",
     fpod: "",
     containerNo: "",
-    qty: "1", // Default qty set to "1"
+    qty: "1",
     equipmentType: "",
     vessel: "",
     voyage: "",
@@ -38,7 +38,7 @@ function AddBooking() {
 
   const [modalData, setModalData] = useState({
     location: { name: "" },
-    shipper: { name: "", contactPerson: "", email: "", contactNumber: "", address: "", salesPerson: "" },
+    shipper: { name: "", contactPerson: "", customerEmail: [], contactNumber: "", address: "", salesPerson: "", salesPersonEmail: [] },
     line: { name: "", contactPerson: "", email: "", contactNumber: "" },
     pol: { name: "" },
     pod: { name: "" },
@@ -52,10 +52,11 @@ function AddBooking() {
     shipper: [
       { label: "Shipper Name", key: "name", required: true },
       { label: "Contact Person", key: "contactPerson" },
-      { label: "Email", key: "email", type: "email" },
+      { label: "Customer Email (comma-separated)", key: "customerEmail", type: "text" },
       { label: "Contact Number", key: "contactNumber", type: "tel" },
       { label: "Address", key: "address" },
-      { label: "Sales Person Name", key: "salesPerson" }
+      { label: "Sales Person Name", key: "salesPerson" },
+      { label: "Sales Person Email (comma-separated)", key: "salesPersonEmail", type: "text" }
     ],
     line: [
       { label: "Line Name", key: "name", required: true },
@@ -142,18 +143,38 @@ function AddBooking() {
   };
 
   const handleModalInputChange = (field, subfield, value) => {
-    setModalData({
-      ...modalData,
-      [field]: { ...modalData[field], [subfield]: value.toUpperCase() }
-    });
+    if (subfield === "customerEmail" || subfield === "salesPersonEmail") {
+      const emailArray = value.split(",").map(email => email.trim().toUpperCase()).filter(email => email);
+      setModalData({
+        ...modalData,
+        [field]: { ...modalData[field], [subfield]: emailArray }
+      });
+    } else {
+      setModalData({
+        ...modalData,
+        [field]: { ...modalData[field], [subfield]: value.toUpperCase() }
+      });
+    }
   };
 
   const handleAddToMaster = async (field) => {
     const data = modalData[field];
     const requiredFields = fieldDefinitions[field].filter(f => f.required).map(f => f.key);
-    if (!requiredFields.every(key => data[key].trim())) {
+    if (!requiredFields.every(key => Array.isArray(data[key]) ? data[key].length > 0 : data[key].trim())) {
       toast.error(`Please enter all required fields for ${field}.`);
       return;
+    }
+
+    if (field === "shipper") {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (data.customerEmail.some(email => email && !emailRegex.test(email))) {
+        toast.error("Please enter valid customer email addresses.");
+        return;
+      }
+      if (data.salesPersonEmail.some(email => email && !emailRegex.test(email))) {
+        toast.error("Please enter valid sales person email addresses.");
+        return;
+      }
     }
 
     const docRef = doc(db, "newMaster", field);
@@ -164,12 +185,14 @@ function AddBooking() {
     }
 
     const isDuplicate = currentList.some(item => {
-      if (field === "shipper" || field === "line") {
+      if (field === "shipper") {
         return item.name === data.name &&
                item.contactPerson === data.contactPerson &&
-               item.email === data.email &&
+               JSON.stringify(item.customerEmail) === JSON.stringify(data.customerEmail) &&
                item.contactNumber === data.contactNumber &&
-               (field === "shipper" ? item.address === data.address : true);
+               item.address === data.address &&
+               item.salesPerson === data.salesPerson &&
+               JSON.stringify(item.salesPersonEmail) === JSON.stringify(data.salesPersonEmail);
       } else if (field === "fpod") {
         return item.name === data.name && item.country === data.country;
       } else if (field === "vessel") {
@@ -201,7 +224,7 @@ function AddBooking() {
     setModalData({
       ...modalData,
       [field]: Object.fromEntries(
-        Object.keys(data).map(key => [key, ""])
+        Object.keys(data).map(key => [key, Array.isArray(data[key]) ? [] : ""])
       )
     });
   };
@@ -224,7 +247,6 @@ function AddBooking() {
       newEntry.equipmentType &&
       newEntry.bookingNo
     ) {
-      // Check if bookingNo already exists
       const bookingNoExists = await checkBookingNoExists(newEntry.bookingNo);
       if (bookingNoExists) {
         toast.error("Booking No already exists. Cannot proceed.");
@@ -254,7 +276,15 @@ function AddBooking() {
       await addDoc(collection(db, "entries"), entryData);
 
       await confirmAndAddToMaster("location", { name: newEntry.location });
-      await confirmAndAddToMaster("shipper", { name: newEntry.shipper });
+      await confirmAndAddToMaster("shipper", { 
+        name: newEntry.shipper, 
+        contactPerson: "", 
+        customerEmail: [], 
+        contactNumber: "", 
+        address: "", 
+        salesPerson: "", 
+        salesPersonEmail: [] 
+      });
       await confirmAndAddToMaster("line", { name: newEntry.line });
       await confirmAndAddToMaster("pol", { name: newEntry.pol });
       await confirmAndAddToMaster("pod", { name: newEntry.pod });
@@ -418,8 +448,8 @@ function AddBooking() {
                     <input
                       type={type}
                       className="form-control"
-                      placeholder={`Enter ${label}`}
-                      value={modalData[field][key]}
+                      placeholder={`Enter ${label}${key.includes("Email") ? " (comma-separated)" : ""}`}
+                      value={Array.isArray(modalData[field][key]) ? modalData[field][key].join(", ") : modalData[field][key]}
                       onChange={(e) => handleModalInputChange(field, key, e.target.value)}
                       required={required}
                     />
@@ -468,7 +498,7 @@ function AddBooking() {
           />
         </div>
         <div className="col-md-4">
-          <label>Shipper</label>
+          <label>Customer</label>
           {createSelect("shipper", masterData.shippers)}
         </div>
         <div className="col-md-4">
