@@ -5,6 +5,7 @@ import { DataGrid } from "@mui/x-data-grid";
 import { TextField, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, Button, FormControlLabel, IconButton } from "@mui/material";
 import DeleteIcon from '@mui/icons-material/Delete';
 import { toast } from "react-toastify";
+import * as XLSX from "xlsx";
 
 // CSS for highlighting rows
 const styles = `
@@ -30,7 +31,7 @@ function Entries() {
     vessel: [],
     equipmentType: []
   });
-
+  const [selectedRows, setSelectedRows] = useState([]); // Track selected rows
   const [openDialog, setOpenDialog] = useState(false); // For BL No dialog
   const [currentRow, setCurrentRow] = useState(null);
   const [blNoInput, setBlNoInput] = useState("");
@@ -38,15 +39,12 @@ function Entries() {
   const [rowToComplete, setRowToComplete] = useState(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [rowToDelete, setRowToDelete] = useState(null);
-
-  // State for SOB date dialog
   const [sobDialogOpen, setSobDialogOpen] = useState(false);
   const [sobDateInput, setSobDateInput] = useState("");
   const [rowForSob, setRowForSob] = useState(null);
 
   const formatCutOffInput = (value) => {
-    if (!value) return ""; // Return empty string if value is empty
-
+    if (!value) return "";
     const numericValue = value.replace(/[^0-9]/g, "");
     if (numericValue.length === 8) {
       const day = numericValue.substring(0, 2);
@@ -67,17 +65,42 @@ function Entries() {
         return `${day}/${month}-${hour}${minute} HRS`;
       } else {
         toast.error("Invalid date or time. Please enter a valid DDMMHHMM (e.g., 06061800 for 06/06-1800 HRS)");
-        return value; // Return original value if invalid
+        return value;
       }
     }
-    return numericValue; // Return partial input if not yet 8 digits
+    return numericValue;
   };
 
-  // Function to format dates from YYYY-MM-DD to DD-MM-YYYY
   const formatDate = (dateStr) => {
     if (!dateStr) return "";
     const [year, month, day] = dateStr.split("-");
     return `${day}-${month}-${year}`;
+  };
+
+  const normalizeDate = (dateStr) => {
+    if (!dateStr) return null;
+    const parts = dateStr.includes("-") ? dateStr.split("-") : [];
+    if (parts.length === 3) {
+      const [a, b, c] = parts;
+      if (parseInt(a, 10) <= 31 && parseInt(b, 10) <= 12) {
+        return `${c}-${b}-${a}`;
+      }
+      if (parseInt(a, 10) >= 1000) {
+        return `${a}-${b}-${c}`;
+      }
+    }
+    return null;
+  };
+
+  const parseAdvancedQuery = (query) => {
+    if (!query) return [];
+    const stopWords = ["details", "of", "on", "with", "for", "in", "at"];
+    const tokens = query
+      .toLowerCase()
+      .replace(/[^\w\s-]/g, "")
+      .split(/\s+/)
+      .filter(token => token && !stopWords.includes(token));
+    return tokens;
   };
 
   useEffect(() => {
@@ -86,14 +109,11 @@ function Entries() {
       const entryList = [];
       const locationSet = new Set();
 
-      // Fetch the customer master data
       const customerDoc = await getDoc(doc(db, "newMaster", "customer"));
       const customerMasterList = customerDoc.exists() ? customerDoc.data().list || [] : [];
 
       querySnapshot.forEach((docSnap) => {
         const entryData = { ...docSnap.data(), id: docSnap.id };
-
-        // If customer is a string, look up the full object in customerMasterList
         let customerObj = entryData.customer;
         if (typeof customerObj === 'string') {
           customerObj = customerMasterList.find(item => item.name === customerObj) || { name: customerObj, salesPerson: "" };
@@ -103,8 +123,8 @@ function Entries() {
           id: docSnap.id,
           ...entryData,
           location: entryData.location?.name || entryData.location || "",
-          customer: customerObj, // Store the full customer object
-          salesPersonName: customerObj?.salesPerson || "", // Extract salesPerson for column
+          customer: customerObj,
+          salesPersonName: customerObj?.salesPerson || "",
           line: entryData.line?.name || entryData.line || "",
           pol: entryData.pol?.name || entryData.pol || "",
           pod: entryData.pod?.name || entryData.pod || "",
@@ -162,11 +182,9 @@ function Entries() {
 
   const handleProcessRowUpdate = async (newRow, oldRow) => {
     try {
-      // Format portCutOff and siCutOff
       const formattedPortCutOff = newRow.portCutOff ? formatCutOffInput(newRow.portCutOff) : newRow.portCutOff;
       const formattedSiCutOff = newRow.siCutOff ? formatCutOffInput(newRow.siCutOff) : newRow.siCutOff;
 
-      // Validate the formatted values
       const cutOffRegex = /^\d{2}\/\d{2}-\d{4} HRS$/;
       if (formattedPortCutOff && !cutOffRegex.test(formattedPortCutOff)) {
         toast.error("Port CutOff must be in the format DD/MM-HHMM HRS (e.g., 06/06-1800 HRS)");
@@ -177,7 +195,6 @@ function Entries() {
         throw new Error("Invalid SI CutOff format");
       }
 
-      // Ensure customer is stored as an object
       let customerData = newRow.customer;
       if (typeof newRow.customer === 'string') {
         const customerDoc = await getDoc(doc(db, "newMaster", "customer"));
@@ -189,15 +206,13 @@ function Entries() {
         portCutOff: formattedPortCutOff,
         siCutOff: formattedSiCutOff,
         customer: customerData,
-        salesPersonName: customerData.salesPerson || "" // Update salesPersonName
+        salesPersonName: customerData.salesPerson || ""
       };
 
-      // Check if portCutOff or siCutOff has changed
       const portCutOffChanged = oldRow.portCutOff !== formattedPortCutOff;
       const siCutOffChanged = oldRow.siCutOff !== formattedSiCutOff;
 
       if (portCutOffChanged || siCutOffChanged) {
-        // Find other entries with the same vessel, voyage, and pol
         const q = query(
           collection(db, "entries"),
           where("vessel", "==", formattedRow.vessel || ""),
@@ -206,13 +221,12 @@ function Entries() {
         );
         const querySnapshot = await getDocs(q);
 
-        // Update all matching entries
         const updatedEntries = [...entries];
         const batchUpdates = [];
 
         querySnapshot.forEach((docSnap) => {
           const entryId = docSnap.id;
-          if (entryId !== formattedRow.id) { // Skip the current row
+          if (entryId !== formattedRow.id) {
             const updateData = {
               portCutOff: portCutOffChanged ? formattedPortCutOff : docSnap.data().portCutOff,
               siCutOff: siCutOffChanged ? formattedSiCutOff : docSnap.data().siCutOff
@@ -220,7 +234,6 @@ function Entries() {
             const docRef = doc(db, "entries", entryId);
             batchUpdates.push(updateDoc(docRef, updateData));
 
-            // Update local state
             const entryIndex = updatedEntries.findIndex(entry => entry.id === entryId);
             if (entryIndex !== -1) {
               updatedEntries[entryIndex] = {
@@ -231,27 +244,23 @@ function Entries() {
           }
         });
 
-        // Update the current row in local state
         const currentRowIndex = updatedEntries.findIndex(entry => entry.id === formattedRow.id);
         if (currentRowIndex !== -1) {
           updatedEntries[currentRowIndex] = formattedRow;
         }
 
-        // Update the current row in Firestore
         const docRef = doc(db, "entries", formattedRow.id);
         const updateData = { ...formattedRow };
         delete updateData.id;
-        delete updateData.salesPersonName; // Exclude salesPersonName from Firestore
+        delete updateData.salesPersonName;
         batchUpdates.push(updateDoc(docRef, updateData));
 
-        // Execute all updates
         await Promise.all(batchUpdates);
 
         setEntries(updatedEntries);
         applyFilters(updatedEntries, searchQuery, selectedLocations);
         toast.success("Row(s) updated successfully!");
       } else {
-        // If no cut-off changes, update only the current row
         const updatedEntries = entries.map((entry) =>
           entry.id === formattedRow.id ? formattedRow : entry
         );
@@ -261,7 +270,7 @@ function Entries() {
         const docRef = doc(db, "entries", formattedRow.id);
         const updateData = { ...formattedRow };
         delete updateData.id;
-        delete updateData.salesPersonName; // Exclude salesPersonName from Firestore
+        delete updateData.salesPersonName;
         await updateDoc(docRef, updateData);
         toast.success("Row updated successfully!");
       }
@@ -275,7 +284,7 @@ function Entries() {
   };
 
   const handleSearch = (event) => {
-    const value = event.target.value.toLowerCase();
+    const value = event.target.value;
     setSearchQuery(value);
     applyFilters(entries, value, selectedLocations);
   };
@@ -292,11 +301,42 @@ function Entries() {
     let filtered = data;
 
     if (search) {
-      filtered = filtered.filter((entry) =>
-        Object.values(entry).some(
-          (val) => typeof val === "string" && val.toLowerCase().includes(search)
-        )
-      );
+      const tokens = parseAdvancedQuery(search);
+      filtered = filtered.filter((entry) => {
+        return tokens.every(token => {
+          const textFields = [
+            "location", "customer", "line", "pol", "pod", "fpod", "vessel",
+            "bookingNo", "containerNo", "volume", "voyage", "blNo", "equipmentType",
+            "portCutOff", "siCutOff", "salesPersonName"
+          ];
+          const textMatch = textFields.some(field => {
+            const value = typeof entry[field] === 'object' ? entry[field]?.name : entry[field];
+            return value && value.toString().toLowerCase().includes(token);
+          });
+
+          const dateFields = ["bookingDate", "bookingValidity", "etd", "sobDate"];
+          const normalizedDate = normalizeDate(token);
+          const dateMatch = normalizedDate && dateFields.some(field => {
+            return entry[field] === normalizedDate;
+          });
+
+          const booleanFields = [
+            "vgmFiled", "siFiled", "finalDG", "firstPrinted", "correctionsFinalised",
+            "blReleased", "isfSent", "sob"
+          ];
+          const booleanMatch = booleanFields.some(field => {
+            if (token === "yes" || token === "true" || token === "filed") {
+              return entry[field] === true;
+            }
+            if (token === "no" || token === "false") {
+              return entry[field] === false;
+            }
+            return false;
+          });
+
+          return textMatch || dateMatch || booleanMatch;
+        });
+      });
     }
 
     if (locations.length > 0) {
@@ -304,6 +344,39 @@ function Entries() {
     }
 
     setFilteredEntries(filtered);
+  };
+
+  const exportToExcel = () => {
+    // Determine rows to export: selected rows if any, otherwise all filtered rows
+    const rowsToExport = selectedRows.length > 0
+      ? filteredEntries.filter(entry => selectedRows.includes(entry.id))
+      : filteredEntries;
+
+    // Map columns to export data, excluding 'actions'
+    const exportData = rowsToExport.map(entry => {
+      const row = {};
+      columns.forEach(column => {
+        if (column.field !== 'actions') {
+          let value = entry[column.field];
+          if (column.field === 'customer') {
+            value = entry.customer?.name || entry.customer;
+          } else if (column.field === 'salesPersonName') {
+            value = entry.customer?.salesPerson || "";
+          } else if (['bookingDate', 'bookingValidity', 'etd', 'sobDate'].includes(column.field)) {
+            value = formatDate(value);
+          } else if (['vgmFiled', 'siFiled', 'finalDG', 'firstPrinted', 'isfSent', 'sob', 'correctionsFinalised', 'blReleased'].includes(column.field)) {
+            value = value ? "Yes" : "No";
+          }
+          row[column.headerName] = value || "";
+        }
+      });
+      return row;
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Entries");
+    XLSX.writeFile(workbook, "booking_entries.xlsx");
   };
 
   const booleanFields = [
@@ -353,13 +426,13 @@ function Entries() {
         field: key,
         headerName: entryFields[key],
         width: 150,
-        editable: key !== "salesPersonName", // Make salesPersonName read-only
+        editable: key !== "salesPersonName",
         ...(isMasterField && {
           type: "singleSelect",
           valueOptions: masterData[key],
           valueParser: (value) => {
             if (key === "customer") {
-              return value; // Store name for display, full object handled in handleProcessRowUpdate
+              return value;
             }
             return value;
           },
@@ -409,7 +482,6 @@ function Entries() {
     })
   ];
 
-  // Insert "FINAL DG" column after "SI FILED"
   const siFiledIndex = columns.findIndex((col) => col.field === "siFiled");
   if (siFiledIndex !== -1) {
     columns.splice(siFiledIndex + 1, 0, {
@@ -436,7 +508,6 @@ function Entries() {
     });
   }
 
-  // Insert "ISF SENT" and "SOB" columns after "FIRST PRINTED"
   if (fpodMaster.length > 0) {
     const firstPrintedIndex = columns.findIndex((col) => col.field === "firstPrinted");
     columns.splice(firstPrintedIndex + 1, 0, {
@@ -492,7 +563,6 @@ function Entries() {
     editable: true
   });
 
-  // Add Delete Action column
   columns.push({
     field: "actions",
     headerName: "Actions",
@@ -516,14 +586,10 @@ function Entries() {
     if (!rowToDelete) return;
 
     try {
-      // Delete from Firestore
       await deleteDoc(doc(db, "entries", rowToDelete.id));
-
-      // Update local state
       const updatedEntries = entries.filter((entry) => entry.id !== rowToDelete.id);
       setEntries(updatedEntries);
       applyFilters(updatedEntries, searchQuery, selectedLocations);
-
       toast.success("Entry deleted successfully!");
     } catch (error) {
       console.error("Error deleting entry: ", error);
@@ -620,7 +686,7 @@ function Entries() {
 
       const entryData = { ...updatedRow };
       delete entryData.id;
-      delete entryData.salesPersonName; // Exclude salesPersonName from Firestore
+      delete entryData.salesPersonName;
       await addDoc(collection(db, "completedFiles"), entryData);
       await deleteDoc(doc(db, "entries", updatedRow.id));
 
@@ -673,7 +739,6 @@ function Entries() {
     setOpenDialog(false);
   };
 
-  // Function to determine row class for highlighting
   const getRowClassName = (params) => {
     const row = params.row;
     return !row.portCutOff && !row.siCutOff ? "highlight-row" : "";
@@ -684,14 +749,22 @@ function Entries() {
       <style>{styles}</style>
       <h2 className="mb-4 text-center">Booking Entries</h2>
 
-      <div className="mb-3">
+      <div className="mb-3 d-flex align-items-center">
         <TextField
-          label="Search..."
+          label="Search (e.g., MAERSK 06-06-2025...)"
           variant="outlined"
           fullWidth
           value={searchQuery}
           onChange={handleSearch}
         />
+        <Button
+          variant="contained"
+          color="primary"
+          onClick={exportToExcel}
+          style={{ marginLeft: '10px' }}
+        >
+          Export to Excel
+        </Button>
       </div>
 
       <div className="mb-3">
@@ -724,10 +797,10 @@ function Entries() {
           processRowUpdate={handleProcessRowUpdate}
           onProcessRowUpdateError={(error) => console.error(error)}
           getRowClassName={getRowClassName}
+          onSelectionModelChange={(newSelection) => setSelectedRows(newSelection)}
         />
       </div>
 
-      {/* Dialog for BL No */}
       <Dialog open={openDialog} onClose={handleDialogClose}>
         <DialogTitle>Enter BL No</DialogTitle>
         <DialogContent>
@@ -747,7 +820,6 @@ function Entries() {
         </DialogActions>
       </Dialog>
 
-      {/* Dialog for SOB Date */}
       <Dialog open={sobDialogOpen} onClose={handleSobCancel}>
         <DialogTitle>Enter SOB Date</DialogTitle>
         <DialogContent>
@@ -768,7 +840,6 @@ function Entries() {
         </DialogActions>
       </Dialog>
 
-      {/* Dialog for Confirming B/L Release */}
       <Dialog open={confirmDialogOpen} onClose={handleCancelComplete}>
         <DialogTitle>Confirm B/L Release</DialogTitle>
         <DialogContent>
@@ -782,7 +853,6 @@ function Entries() {
         </DialogActions>
       </Dialog>
 
-      {/* Dialog for Confirming Deletion */}
       <Dialog open={deleteDialogOpen} onClose={handleDeleteCancel}>
         <DialogTitle>Confirm Deletion</DialogTitle>
         <DialogContent>
@@ -804,7 +874,7 @@ const entryFields = {
   salesPersonName: "Sales",
   bookingDate: "Booking Date",
   bookingNo: "Booking No",
-  bookingValidity: "Booking Validity",
+  bookingValidity: "Expiry",
   line: "Line",
   pol: "POL",
   pod: "POD",
@@ -820,7 +890,7 @@ const entryFields = {
   siFiled: "SI Filed",
   firstPrinted: "First Printed",
   correctionsFinalised: "Corrections Finalised",
-  blReleased: "B/L - Released",
+  blReleased: "B/L Released",
 };
 
 export default Entries;
