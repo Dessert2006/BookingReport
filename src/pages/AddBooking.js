@@ -50,7 +50,7 @@ function AddBooking() {
   const fieldDefinitions = {
     location: [{ label: "Location Name", key: "name", required: true }],
     customer: [
-      { label: "customer Name", key: "name", required: true },
+      { label: "Customer Name", key: "name", required: true },
       { label: "Contact Person", key: "contactPerson" },
       { label: "Customer Email (comma-separated)", key: "customerEmail", type: "text" },
       { label: "Contact Number", key: "contactNumber", type: "tel" },
@@ -154,6 +154,18 @@ function AddBooking() {
         ...modalData,
         [field]: { ...modalData[field], [subfield]: value.toUpperCase() }
       });
+    }
+  };
+
+  const openModal = (field) => {
+    const modal = document.getElementById(`${field}Modal`);
+    if (modal) {
+      modal.classList.add('show');
+      modal.style.display = 'block';
+      document.body.classList.add('modal-open');
+      const backdrop = document.createElement('div');
+      backdrop.className = 'modal-backdrop fade show';
+      document.body.appendChild(backdrop);
     }
   };
 
@@ -416,12 +428,7 @@ function AddBooking() {
             }
             onChange={(selected) => {
               if (selected && selected.value === "add_new") {
-                document.getElementById(`${field}Modal`).classList.add('show');
-                document.getElementById(`${field}Modal`).style.display = 'block';
-                document.body.classList.add('modal-open');
-                const backdrop = document.createElement('div');
-                backdrop.className = 'modal-backdrop fade show';
-                document.body.appendChild(backdrop);
+                openModal(field);
               } else {
                 handleChange(field, selected ? selected.value : "");
               }
@@ -438,8 +445,7 @@ function AddBooking() {
         <button
           type="button"
           className="btn btn-success ms-2"
-          data-bs-toggle="modal"
-          data-bs-target={`#${field}Modal`}
+          onClick={() => openModal(field)}
         >
           +
         </button>
