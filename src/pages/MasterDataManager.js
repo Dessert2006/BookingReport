@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { db } from "../firebase";
-import { getDoc, doc, updateDoc, collection, getDocs } from "firebase/firestore"; // Added getDocs
+import { getDoc, doc, updateDoc, collection, getDocs } from "firebase/firestore";
 import Select from "react-select";
 import { toast } from "react-toastify";
 
@@ -10,7 +10,7 @@ function MasterDataManager() {
   const [editIndex, setEditIndex] = useState(null);
   const [editData, setEditData] = useState({});
   const [newEntry, setNewEntry] = useState({});
-  const [oldName, setOldName] = useState(""); // Added: Track Old Name
+  const [oldName, setOldName] = useState("");
 
   const masterOptions = [
     { value: "shipper", label: "Shipper" },
@@ -23,7 +23,7 @@ function MasterDataManager() {
   ];
 
   const fieldDefinitions = {
-    shipper: ["name", "contactPerson", "email", "contactNumber", "address", "salesPerson"],
+    shipper: ["name", "contactPerson", "customerEmail", "contactNumber", "address", "salesPerson", "salesPersonEmail"],
     line: ["name", "contactPerson", "email", "contactNumber"],
     pol: ["name"],
     pod: ["name"],
@@ -52,13 +52,39 @@ function MasterDataManager() {
 
   const handleEdit = (index) => {
     setEditIndex(index);
-    setEditData(masterList[index]);
-    setOldName(masterList[index].name); // Save old name
+    setEditData({
+      ...masterList[index],
+      customerEmail: masterList[index].customerEmail ? masterList[index].customerEmail.join(", ") : "",
+      salesPersonEmail: masterList[index].salesPersonEmail ? masterList[index].salesPersonEmail.join(", ") : ""
+    });
+    setOldName(masterList[index].name);
   };
 
   const handleSave = async (index) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const updatedData = {
+      ...editData,
+      customerEmail: editData.customerEmail
+        ? editData.customerEmail.split(",").map(email => email.trim()).filter(email => email)
+        : [],
+      salesPersonEmail: editData.salesPersonEmail
+        ? editData.salesPersonEmail.split(",").map(email => email.trim()).filter(email => email)
+        : []
+    };
+
+    if (selectedMaster === "shipper") {
+      if (updatedData.customerEmail.some(email => email && !emailRegex.test(email))) {
+        toast.error("Please enter valid customer email addresses.");
+        return;
+      }
+      if (updatedData.salesPersonEmail.some(email => email && !emailRegex.test(email))) {
+        toast.error("Please enter valid sales person email addresses.");
+        return;
+      }
+    }
+
     const updatedList = [...masterList];
-    updatedList[index] = editData;
+    updatedList[index] = updatedData;
 
     const docRef = doc(db, "newMaster", selectedMaster);
     try {
@@ -67,13 +93,9 @@ function MasterDataManager() {
       setEditIndex(null);
       setMasterList(updatedList);
 
-      // Trigger sync if name has changed
-      if (selectedMaster === "shipper" || selectedMaster === "line") {
-        if (oldName && oldName !== editData.name) {
-          await syncEntriesWithMaster(oldName, editData.name, selectedMaster);
-        }
+      if (selectedMaster === "shipper" && oldName && oldName !== updatedData.name) {
+        await syncEntriesWithMaster(oldName, updatedData, selectedMaster);
       }
-
     } catch (error) {
       console.error("Error updating document: ", error);
       toast.error("Failed to update master data.");
@@ -105,12 +127,34 @@ function MasterDataManager() {
   };
 
   const handleAddNewEntry = async () => {
-    if (Object.keys(newEntry).length === 0) {
-      toast.error("Please enter data before adding.");
+    if (Object.keys(newEntry).length === 0 || !newEntry.name) {
+      toast.error("Please enter the name field before adding.");
       return;
     }
 
-    const updatedList = [...masterList, newEntry];
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const updatedEntry = {
+      ...newEntry,
+      customerEmail: newEntry.customerEmail
+        ? newEntry.customerEmail.split(",").map(email => email.trim()).filter(email => email)
+        : [],
+      salesPersonEmail: newEntry.salesPersonEmail
+        ? newEntry.salesPersonEmail.split(",").map(email => email.trim()).filter(email => email)
+        : []
+    };
+
+    if (selectedMaster === "shipper") {
+      if (updatedEntry.customerEmail.some(email => email && !emailRegex.test(email))) {
+        toast.error("Please enter valid customer email addresses.");
+        return;
+      }
+      if (updatedEntry.salesPersonEmail.some(email => email && !emailRegex.test(email))) {
+        toast.error("Please enter valid sales person email addresses.");
+        return;
+      }
+    }
+
+    const updatedList = [...masterList, updatedEntry];
 
     const docRef = doc(db, "newMaster", selectedMaster);
     try {
@@ -124,7 +168,7 @@ function MasterDataManager() {
     }
   };
 
-  const syncEntriesWithMaster = async (oldName, newName, fieldType) => {
+  const syncEntriesWithMaster = async (oldName, newData, fieldType) => {
     const entriesSnapshot = await getDocs(collection(db, "entries"));
     const updates = [];
 
@@ -132,15 +176,15 @@ function MasterDataManager() {
       const entryData = entryDoc.data();
       const entryId = entryDoc.id;
 
-      if (entryData[fieldType] === oldName) {
+      if (entryData[fieldType]?.name === oldName) {
         const docRef = doc(db, "entries", entryId);
-        updates.push(updateDoc(docRef, { [fieldType]: newName }));
+        updates.push(updateDoc(docRef, { [fieldType]: newData }));
       }
     }
 
     if (updates.length > 0) {
       await Promise.all(updates);
-      toast.success(`Entries synced: ${oldName} ➔ ${newName}`);
+      toast.success(`Entries synced for ${fieldType}: ${oldName} ➔ ${newData.name}`);
     } else {
       toast.info("No matching entries found to update.");
     }
@@ -161,16 +205,16 @@ function MasterDataManager() {
         />
       </div>
 
-      {selectedMaster && masterList.length > 0 && (
+      {selectedMaster && (
         <>
           <h5>Add New {selectedMaster.toUpperCase()} Entry:</h5>
           <div className="row mb-3">
             {getFieldOrder().map((key) => (
               <div className="col-md-3 mb-2" key={key}>
                 <input
-                  type="text"
+                  type={key.includes("Email") ? "text" : "text"}
                   className="form-control"
-                  placeholder={`Enter ${key}`}
+                  placeholder={`Enter ${key}${key.includes("Email") ? " (comma-separated)" : ""}`}
                   value={newEntry[key] || ""}
                   onChange={(e) => handleNewEntryChange(key, e.target.value)}
                 />
@@ -199,13 +243,13 @@ function MasterDataManager() {
                     <td key={key}>
                       {editIndex === index ? (
                         <input
-                          type="text"
+                          type={key.includes("Email") ? "text" : "text"}
                           className="form-control"
                           value={editData[key] || ""}
                           onChange={(e) => handleChange(key, e.target.value)}
                         />
                       ) : (
-                        item[key] || ""
+                        key.includes("Email") ? (item[key] || []).join(", ") : item[key] || ""
                       )}
                     </td>
                   ))}

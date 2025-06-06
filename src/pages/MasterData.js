@@ -5,7 +5,7 @@ import { toast } from 'react-toastify';
 
 function MasterData() {
   const [newMaster, setNewMaster] = useState({
-    shipper: { name: "", contactPerson: "", email: "", contactNumber: "", address: "",salesPerson: "" },
+    shipper: { name: "", contactPerson: "", customerEmail: [], contactNumber: "", address: "", salesPerson: "", salesPersonEmail: [] },
     line: { name: "", contactPerson: "", email: "", contactNumber: "" },
     pol: { name: "" },
     pod: { name: "" },
@@ -18,10 +18,11 @@ function MasterData() {
     shipper: [
       { label: "Shipper Name", key: "name", required: true },
       { label: "Contact Person", key: "contactPerson" },
-      { label: "Email", key: "email", type: "email" },
+      { label: "Customer Email (comma-separated)", key: "customerEmail", type: "text" },
       { label: "Contact Number", key: "contactNumber", type: "tel" },
       { label: "Address", key: "address" },
-      { label: "Sales Person Name", key: "salesPerson" }
+      { label: "Sales Person Name", key: "salesPerson" },
+      { label: "Sales Person Email (comma-separated)", key: "salesPersonEmail", type: "text" }
     ],
     line: [
       { label: "Line Name", key: "name", required: true },
@@ -43,10 +44,19 @@ function MasterData() {
   };
 
   const handleInputChange = (field, subfield, value) => {
-    setNewMaster({
-      ...newMaster,
-      [field]: { ...newMaster[field], [subfield]: value }
-    });
+    if (subfield === "customerEmail" || subfield === "salesPersonEmail") {
+      // Split comma-separated emails into an array
+      const emailArray = value.split(",").map(email => email.trim()).filter(email => email);
+      setNewMaster({
+        ...newMaster,
+        [field]: { ...newMaster[field], [subfield]: emailArray }
+      });
+    } else {
+      setNewMaster({
+        ...newMaster,
+        [field]: { ...newMaster[field], [subfield]: value }
+      });
+    }
   };
 
   const handleAddSingle = async (field) => {
@@ -57,13 +67,26 @@ function MasterData() {
       return;
     }
 
+    // Validate email formats for shipper
+    if (field === "shipper") {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (data.customerEmail.some(email => email && !emailRegex.test(email))) {
+        toast.error("Please enter valid customer email addresses.");
+        return;
+      }
+      if (data.salesPersonEmail.some(email => email && !emailRegex.test(email))) {
+        toast.error("Please enter valid sales person email addresses.");
+        return;
+      }
+    }
+
     const added = await addToMaster(field, data);
     if (added) {
       toast.success(`${capitalize(field)} added successfully!`);
       setNewMaster({
         ...newMaster,
         [field]: Object.fromEntries(
-          Object.keys(data).map(key => [key, ""])
+          Object.keys(data).map(key => [key, key.includes("Email") ? [] : ""])
         )
       });
     }
@@ -71,7 +94,9 @@ function MasterData() {
 
   const handleAddAll = async () => {
     const filledFields = Object.keys(newMaster).filter(field => 
-      fieldDefinitions[field].some(f => newMaster[field][f.key].trim())
+      fieldDefinitions[field].some(f => 
+        f.key.includes("Email") ? newMaster[field][f.key].length > 0 : newMaster[field][f.key].trim()
+      )
     );
 
     if (filledFields.length === 0) {
@@ -83,7 +108,19 @@ function MasterData() {
     for (let field of filledFields) {
       const requiredFields = fieldDefinitions[field].filter(f => f.required).map(f => f.key);
       if (requiredFields.every(key => newMaster[field][key].trim())) {
-        const added = await addToMaster(field, newMaster[field]);
+        const data = newMaster[field];
+        if (field === "shipper") {
+          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+          if (data.customerEmail.some(email => email && !emailRegex.test(email))) {
+            toast.error(`Invalid customer email in ${field}.`);
+            continue;
+          }
+          if (data.salesPersonEmail.some(email => email && !emailRegex.test(email))) {
+            toast.error(`Invalid sales person email in ${field}.`);
+            continue;
+          }
+        }
+        const added = await addToMaster(field, data);
         if (added) addedCount++;
       }
     }
@@ -91,7 +128,7 @@ function MasterData() {
     if (addedCount > 0) {
       toast.success(`Added ${addedCount} master entr${addedCount > 1 ? "ies" : "y"} successfully!`);
       setNewMaster({
-        shipper: { name: "", contactPerson: "", email: "", contactNumber: "", address: "",salesPerson: "" },
+        shipper: { name: "", contactPerson: "", customerEmail: [], contactNumber: "", address: "", salesPerson: "", salesPersonEmail: [] },
         line: { name: "", contactPerson: "", email: "", contactNumber: "" },
         pol: { name: "" },
         pod: { name: "" },
@@ -105,7 +142,7 @@ function MasterData() {
   };
 
   const addToMaster = async (field, data) => {
-    const docRef = doc(db, "newMaster", field); // Changed to 'newMaster' collection
+    const docRef = doc(db, "newMaster", field);
     const docSnap = await getDoc(docRef);
 
     let currentList = [];
@@ -115,12 +152,14 @@ function MasterData() {
 
     // Enhanced uniqueness check considering all fields
     const isDuplicate = currentList.some(item => {
-      if (field === "shipper" || field === "line") {
+      if (field === "shipper") {
         return item.name === data.name &&
                item.contactPerson === data.contactPerson &&
-               item.email === data.email &&
+               JSON.stringify(item.customerEmail) === JSON.stringify(data.customerEmail) &&
                item.contactNumber === data.contactNumber &&
-               (field === "shipper" ? item.address === data.address : true);
+               item.address === data.address &&
+               item.salesPerson === data.salesPerson &&
+               JSON.stringify(item.salesPersonEmail) === JSON.stringify(data.salesPersonEmail);
       } else if (field === "fpod") {
         return item.name === data.name && item.country === data.country;
       } else if (field === "vessel") {
@@ -128,7 +167,7 @@ function MasterData() {
       } else if (field === "equipmentType") {
         return item.type === data.type;
       } else {
-        return item.name === data.name; // For pol, pod
+        return item.name === data.name; // For line, pol, pod
       }
     });
 
@@ -152,7 +191,9 @@ function MasterData() {
   const capitalize = (str) => str.charAt(0).toUpperCase() + str.slice(1);
 
   const isAnyFieldFilled = Object.values(newMaster).some(data => 
-    Object.values(data).some(value => value.trim())
+    Object.values(data).some(value => 
+      Array.isArray(value) ? value.length > 0 : value.trim()
+    )
   );
 
   return (
@@ -201,8 +242,8 @@ function MasterData() {
                           <input
                             type={type}
                             className="form-control"
-                            placeholder={`Enter ${label}`}
-                            value={newMaster[field][key]}
+                            placeholder={`Enter ${label}${key.includes("Email") ? " (comma-separated)" : ""}`}
+                            value={Array.isArray(newMaster[field][key]) ? newMaster[field][key].join(", ") : newMaster[field][key]}
                             onChange={(e) => handleInputChange(field, key, e.target.value)}
                             required={required}
                           />

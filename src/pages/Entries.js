@@ -2,7 +2,8 @@ import React, { useState, useEffect } from "react";
 import { db } from "../firebase";
 import { collection, getDocs, doc, updateDoc, getDoc, addDoc, deleteDoc, query, where } from "firebase/firestore";
 import { DataGrid } from "@mui/x-data-grid";
-import { TextField, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, Button, FormControlLabel } from "@mui/material";
+import { TextField, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, Button, FormControlLabel, IconButton } from "@mui/material";
+import DeleteIcon from '@mui/icons-material/Delete';
 import { toast } from "react-toastify";
 
 // CSS for highlighting rows
@@ -35,6 +36,8 @@ function Entries() {
   const [blNoInput, setBlNoInput] = useState("");
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [rowToComplete, setRowToComplete] = useState(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [rowToDelete, setRowToDelete] = useState(null);
 
   // State for SOB date dialog
   const [sobDialogOpen, setSobDialogOpen] = useState(false);
@@ -82,12 +85,25 @@ function Entries() {
       const querySnapshot = await getDocs(collection(db, "entries"));
       const entryList = [];
       const locationSet = new Set();
+
+      // Fetch the shipper master data
+      const shipperDoc = await getDoc(doc(db, "newMaster", "shipper"));
+      const shipperMasterList = shipperDoc.exists() ? shipperDoc.data().list || [] : [];
+
       querySnapshot.forEach((docSnap) => {
         const entryData = { ...docSnap.data(), id: docSnap.id };
+
+        // If shipper is a string, look up the full object in shipperMasterList
+        let shipperObj = entryData.shipper;
+        if (typeof shipperObj === 'string') {
+          shipperObj = shipperMasterList.find(item => item.name === shipperObj) || { name: shipperObj, salesPerson: "" };
+        }
+
         entryList.push({
           ...entryData,
           location: entryData.location?.name || entryData.location || "",
-          shipper: entryData.shipper?.name || entryData.shipper || "",
+          shipper: shipperObj, // Store the full shipper object
+          salesPersonName: shipperObj?.salesPerson || "", // Extract salesPerson for column
           line: entryData.line?.name || entryData.line || "",
           pol: entryData.pol?.name || entryData.pol || "",
           pod: entryData.pod?.name || entryData.pod || "",
@@ -101,6 +117,7 @@ function Entries() {
           blNo: entryData.blNo || "",
           invoiceNo: ""
         });
+
         if (entryData.location) {
           locationSet.add(entryData.location);
         }
@@ -128,7 +145,9 @@ function Entries() {
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           newMasterData[field] = (docSnap.data().list || []).map(item => 
-            field === "fpod" ? `${item.name}, ${item.country}` : (item.name || item.type || item || "")
+            field === "fpod" ? `${item.name}, ${item.country}` : 
+            field === "shipper" ? item.name : 
+            (item.name || item.type || item || "")
           );
         }
       }
@@ -157,10 +176,19 @@ function Entries() {
         throw new Error("Invalid SI CutOff format");
       }
 
+      // Ensure shipper is stored as an object
+      let shipperData = newRow.shipper;
+      if (typeof newRow.shipper === 'string') {
+        const shipperDoc = await getDoc(doc(db, "newMaster", "shipper"));
+        shipperData = shipperDoc.data()?.list.find(item => item.name === newRow.shipper) || { name: newRow.shipper };
+      }
+
       const formattedRow = {
         ...newRow,
         portCutOff: formattedPortCutOff,
-        siCutOff: formattedSiCutOff
+        siCutOff: formattedSiCutOff,
+        shipper: shipperData,
+        salesPersonName: shipperData.salesPerson || "" // Update salesPersonName
       };
 
       // Check if portCutOff or siCutOff has changed
@@ -212,6 +240,7 @@ function Entries() {
         const docRef = doc(db, "entries", formattedRow.id);
         const updateData = { ...formattedRow };
         delete updateData.id;
+        delete updateData.salesPersonName; // Exclude salesPersonName from Firestore
         batchUpdates.push(updateDoc(docRef, updateData));
 
         // Execute all updates
@@ -231,6 +260,7 @@ function Entries() {
         const docRef = doc(db, "entries", formattedRow.id);
         const updateData = { ...formattedRow };
         delete updateData.id;
+        delete updateData.salesPersonName; // Exclude salesPersonName from Firestore
         await updateDoc(docRef, updateData);
         toast.success("Row updated successfully!");
       }
@@ -278,12 +308,12 @@ function Entries() {
   const booleanFields = [
     "vgmFiled",
     "siFiled",
-    "finalDG", // Added FINAL DG to boolean fields
+    "finalDG",
     "firstPrinted",
     "correctionsFinalised",
     "blReleased",
     "isfSent",
-    "sob" // Added SOB to boolean fields
+    "sob"
   ];
 
   const prerequisiteFields = [
@@ -322,10 +352,17 @@ function Entries() {
         field: key,
         headerName: entryFields[key],
         width: 150,
-        editable: true,
+        editable: key !== "salesPersonName", // Make salesPersonName read-only
         ...(isMasterField && {
           type: "singleSelect",
           valueOptions: masterData[key],
+          valueParser: (value) => {
+            if (key === "shipper") {
+              return value; // Store name for display, full object handled in handleProcessRowUpdate
+            }
+            return value;
+          },
+          renderCell: (params) => params.value.name || params.value || ""
         }),
         ...(isDateField && {
           valueFormatter: ({ value }) => formatDate(value),
@@ -358,6 +395,12 @@ function Entries() {
           }
           if (isDateField) {
             return formatDate(params.value) || "";
+          }
+          if (key === "shipper") {
+            return params.value.name || params.value || "";
+          }
+          if (key === "salesPersonName") {
+            return params.row.shipper?.salesPerson || "";
           }
           return params.value || "";
         }
@@ -425,7 +468,6 @@ function Entries() {
       }
     });
 
-    // Insert "SOB" column after "ISF SENT"
     columns.splice(firstPrintedIndex + 2, 0, {
       field: "sob",
       headerName: "SOB",
@@ -436,7 +478,7 @@ function Entries() {
           checked={!!params.row.sob}
           onChange={(e) => handleSobCheckbox(params.row, e.target.checked)}
           color="primary"
-          disabled={params.row.sob} // Disable after checking
+          disabled={params.row.sob}
         />
       )
     });
@@ -448,6 +490,53 @@ function Entries() {
     width: 200,
     editable: true
   });
+
+  // Add Delete Action column
+  columns.push({
+    field: "actions",
+    headerName: "Actions",
+    width: 100,
+    renderCell: (params) => (
+      <IconButton
+        color="error"
+        onClick={() => handleDeleteClick(params.row)}
+      >
+        <DeleteIcon />
+      </IconButton>
+    ),
+  });
+
+  const handleDeleteClick = (row) => {
+    setRowToDelete(row);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!rowToDelete) return;
+
+    try {
+      // Delete from Firestore
+      await deleteDoc(doc(db, "entries", rowToDelete.id));
+
+      // Update local state
+      const updatedEntries = entries.filter((entry) => entry.id !== rowToDelete.id);
+      setEntries(updatedEntries);
+      applyFilters(updatedEntries, searchQuery, selectedLocations);
+
+      toast.success("Entry deleted successfully!");
+    } catch (error) {
+      console.error("Error deleting entry: ", error);
+      toast.error("Failed to delete entry.");
+    } finally {
+      setRowToDelete(null);
+      setDeleteDialogOpen(false);
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    setRowToDelete(null);
+    setDeleteDialogOpen(false);
+  };
 
   const handleSobCheckbox = (row, checked) => {
     if (checked) {
@@ -461,7 +550,7 @@ function Entries() {
     if (!sobDateInput) {
       toast.error("Please select a date for SOB.");
       return;
-  }
+    }
 
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
     if (!dateRegex.test(sobDateInput)) {
@@ -469,7 +558,7 @@ function Entries() {
       return;
     }
 
-    const formattedSobDate = formatDate(sobDateInput); // Convert YYYY-MM-DD to DD-MM-YYYY for display
+    const formattedSobDate = formatDate(sobDateInput);
     const newRow = { ...rowForSob, sob: true, sobDate: formattedSobDate };
     await handleProcessRowUpdate(newRow, rowForSob);
     setSobDialogOpen(false);
@@ -509,7 +598,7 @@ function Entries() {
         return;
       }
 
-      setRowToComplete(row);
+      setRowToComplete({ ...row, blReleased: true });
       setConfirmDialogOpen(true);
     } else {
       const newRow = { ...row, [field]: value };
@@ -530,8 +619,8 @@ function Entries() {
 
       const entryData = { ...updatedRow };
       delete entryData.id;
+      delete entryData.salesPersonName; // Exclude salesPersonName from Firestore
       await addDoc(collection(db, "completedFiles"), entryData);
-
       await deleteDoc(doc(db, "entries", updatedRow.id));
 
       const newEntries = entries.filter((entry) => entry.id !== updatedRow.id);
@@ -691,6 +780,20 @@ function Entries() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Dialog for Confirming Deletion */}
+      <Dialog open={deleteDialogOpen} onClose={handleDeleteCancel}>
+        <DialogTitle>Confirm Deletion</DialogTitle>
+        <DialogContent>
+          <p>Are you sure you want to delete this entry? This action cannot be undone.</p>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleDeleteCancel}>Cancel</Button>
+          <Button onClick={handleDeleteConfirm} color="error">
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
     </div>
   );
 }
@@ -698,6 +801,7 @@ function Entries() {
 const entryFields = {
   bookingDate: "Booking Date",
   shipper: "Shipper",
+  salesPersonName: "Salesperson Name",
   bookingValidity: "Booking Validity",
   line: "Line",
   bookingNo: "Booking No",
