@@ -28,7 +28,7 @@ function CompletedFiles() {
         entryList.push({
           ...entryData,
           location: entryData.location?.name || entryData.location || "",
-          shipper: entryData.shipper?.name || entryData.shipper || "",
+          customer: entryData.customer?.name || entryData.customer || "",
           line: entryData.line?.name || entryData.line || "",
           pol: entryData.pol?.name || entryData.pol || "",
           pod: entryData.pod?.name || entryData.pod || "",
@@ -299,7 +299,7 @@ function CompletedFiles() {
 
 const entryFields = {
   bookingDate: "Booking Date",
-  shipper: "Shipper",
+  customer: "customer",
   bookingValidity: "Booking Validity",
   line: "Line",
   bookingNo: "Booking No",

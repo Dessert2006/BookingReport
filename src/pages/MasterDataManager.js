@@ -13,7 +13,7 @@ function MasterDataManager() {
   const [oldName, setOldName] = useState("");
 
   const masterOptions = [
-    { value: "shipper", label: "Shipper" },
+    { value: "customer", label: "Customer" },
     { value: "line", label: "Line" },
     { value: "pol", label: "POL" },
     { value: "pod", label: "POD" },
@@ -23,7 +23,7 @@ function MasterDataManager() {
   ];
 
   const fieldDefinitions = {
-    shipper: ["name", "contactPerson", "customerEmail", "contactNumber", "address", "salesPerson", "salesPersonEmail"],
+    customer: ["name", "contactPerson", "customerEmail", "contactNumber", "address", "salesPerson", "salesPersonEmail"],
     line: ["name", "contactPerson", "email", "contactNumber"],
     pol: ["name"],
     pod: ["name"],
@@ -72,7 +72,7 @@ function MasterDataManager() {
         : []
     };
 
-    if (selectedMaster === "shipper") {
+    if (selectedMaster === "customer") {
       if (updatedData.customerEmail.some(email => email && !emailRegex.test(email))) {
         toast.error("Please enter valid customer email addresses.");
         return;
@@ -93,7 +93,7 @@ function MasterDataManager() {
       setEditIndex(null);
       setMasterList(updatedList);
 
-      if (selectedMaster === "shipper" && oldName && oldName !== updatedData.name) {
+      if (selectedMaster === "customer" && oldName && oldName !== updatedData.name) {
         await syncEntriesWithMaster(oldName, updatedData, selectedMaster);
       }
     } catch (error) {
@@ -143,7 +143,7 @@ function MasterDataManager() {
         : []
     };
 
-    if (selectedMaster === "shipper") {
+    if (selectedMaster === "customer") {
       if (updatedEntry.customerEmail.some(email => email && !emailRegex.test(email))) {
         toast.error("Please enter valid customer email addresses.");
         return;

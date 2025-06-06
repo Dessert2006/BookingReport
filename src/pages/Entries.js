@@ -22,7 +22,7 @@ function Entries() {
   const [selectedLocations, setSelectedLocations] = useState([]);
   const [masterData, setMasterData] = useState({
     location: [],
-    shipper: [],
+    customer: [],
     line: [],
     pol: [],
     pod: [],
@@ -86,25 +86,25 @@ function Entries() {
       const entryList = [];
       const locationSet = new Set();
 
-      // Fetch the shipper master data
-      const shipperDoc = await getDoc(doc(db, "newMaster", "shipper"));
-      const shipperMasterList = shipperDoc.exists() ? shipperDoc.data().list || [] : [];
+      // Fetch the customer master data
+      const customerDoc = await getDoc(doc(db, "newMaster", "customer"));
+      const customerMasterList = customerDoc.exists() ? customerDoc.data().list || [] : [];
 
       querySnapshot.forEach((docSnap) => {
         const entryData = { ...docSnap.data(), id: docSnap.id };
 
-        // If shipper is a string, look up the full object in shipperMasterList
-        let shipperObj = entryData.shipper;
-        if (typeof shipperObj === 'string') {
-          shipperObj = shipperMasterList.find(item => item.name === shipperObj) || { name: shipperObj, salesPerson: "" };
+        // If customer is a string, look up the full object in customerMasterList
+        let customerObj = entryData.customer;
+        if (typeof customerObj === 'string') {
+          customerObj = customerMasterList.find(item => item.name === customerObj) || { name: customerObj, salesPerson: "" };
         }
 
         entryList.push({
           id: docSnap.id,
           ...entryData,
           location: entryData.location?.name || entryData.location || "",
-          shipper: shipperObj, // Store the full shipper object
-          salesPersonName: shipperObj?.salesPerson || "", // Extract salesPerson for column
+          customer: customerObj, // Store the full customer object
+          salesPersonName: customerObj?.salesPerson || "", // Extract salesPerson for column
           line: entryData.line?.name || entryData.line || "",
           pol: entryData.pol?.name || entryData.pol || "",
           pod: entryData.pod?.name || entryData.pod || "",
@@ -130,10 +130,10 @@ function Entries() {
     };
 
     const fetchMasterData = async () => {
-      const masterFields = ["location", "shipper", "line", "pol", "pod", "fpod", "vessel", "equipmentType"];
+      const masterFields = ["location", "customer", "line", "pol", "pod", "fpod", "vessel", "equipmentType"];
       let newMasterData = {
         location: [],
-        shipper: [],
+        customer: [],
         line: [],
         pol: [],
         pod: [],
@@ -147,7 +147,7 @@ function Entries() {
         if (docSnap.exists()) {
           newMasterData[field] = (docSnap.data().list || []).map(item => 
             field === "fpod" ? `${item.name}, ${item.country}` : 
-            field === "shipper" ? item.name : 
+            field === "customer" ? item.name : 
             (item.name || item.type || item || "")
           );
         }
@@ -177,19 +177,19 @@ function Entries() {
         throw new Error("Invalid SI CutOff format");
       }
 
-      // Ensure shipper is stored as an object
-      let shipperData = newRow.shipper;
-      if (typeof newRow.shipper === 'string') {
-        const shipperDoc = await getDoc(doc(db, "newMaster", "shipper"));
-        shipperData = shipperDoc.data()?.list.find(item => item.name === newRow.shipper) || { name: newRow.shipper };
+      // Ensure customer is stored as an object
+      let customerData = newRow.customer;
+      if (typeof newRow.customer === 'string') {
+        const customerDoc = await getDoc(doc(db, "newMaster", "customer"));
+        customerData = customerDoc.data()?.list.find(item => item.name === newRow.customer) || { name: newRow.customer };
       }
 
       const formattedRow = {
         ...newRow,
         portCutOff: formattedPortCutOff,
         siCutOff: formattedSiCutOff,
-        shipper: shipperData,
-        salesPersonName: shipperData.salesPerson || "" // Update salesPersonName
+        customer: customerData,
+        salesPersonName: customerData.salesPerson || "" // Update salesPersonName
       };
 
       // Check if portCutOff or siCutOff has changed
@@ -326,7 +326,7 @@ function Entries() {
 
   const masterFields = [
     "location",
-    "shipper",
+    "customer",
     "line",
     "pol",
     "pod",
@@ -358,7 +358,7 @@ function Entries() {
           type: "singleSelect",
           valueOptions: masterData[key],
           valueParser: (value) => {
-            if (key === "shipper") {
+            if (key === "customer") {
               return value; // Store name for display, full object handled in handleProcessRowUpdate
             }
             return value;
@@ -397,11 +397,11 @@ function Entries() {
           if (isDateField) {
             return formatDate(params.value) || "";
           }
-          if (key === "shipper") {
+          if (key === "customer") {
             return params.value.name || params.value || "";
           }
           if (key === "salesPersonName") {
-            return params.row.shipper?.salesPerson || "";
+            return params.row.customer?.salesPerson || "";
           }
           return params.value || "";
         }
@@ -800,7 +800,7 @@ function Entries() {
 }
 
 const entryFields = {
-  shipper: "Customer",
+  customer: "Customer",
   salesPersonName: "Sales",
   bookingDate: "Booking Date",
   bookingNo: "Booking No",

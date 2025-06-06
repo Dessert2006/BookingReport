@@ -8,7 +8,7 @@ function AddBooking() {
   const [newEntry, setNewEntry] = useState({
     location: "",
     bookingDate: "",
-    shipper: "",
+    customer: "",
     bookingValidity: "",
     line: "",
     bookingNo: "",
@@ -27,7 +27,7 @@ function AddBooking() {
 
   const [masterData, setMasterData] = useState({
     locations: [],
-    shippers: [],
+    customers: [],
     lines: [],
     pols: [],
     pods: [],
@@ -38,7 +38,7 @@ function AddBooking() {
 
   const [modalData, setModalData] = useState({
     location: { name: "" },
-    shipper: { name: "", contactPerson: "", customerEmail: [], contactNumber: "", address: "", salesPerson: "", salesPersonEmail: [] },
+    customer: { name: "", contactPerson: "", customerEmail: [], contactNumber: "", address: "", salesPerson: "", salesPersonEmail: [] },
     line: { name: "", contactPerson: "", email: "", contactNumber: "" },
     pol: { name: "" },
     pod: { name: "" },
@@ -49,8 +49,8 @@ function AddBooking() {
 
   const fieldDefinitions = {
     location: [{ label: "Location Name", key: "name", required: true }],
-    shipper: [
-      { label: "Shipper Name", key: "name", required: true },
+    customer: [
+      { label: "customer Name", key: "name", required: true },
       { label: "Contact Person", key: "contactPerson" },
       { label: "Customer Email (comma-separated)", key: "customerEmail", type: "text" },
       { label: "Contact Number", key: "contactNumber", type: "tel" },
@@ -78,10 +78,10 @@ function AddBooking() {
   };
 
   const fetchMasterData = async () => {
-    const masterFields = ["location", "shipper", "line", "pol", "pod", "fpod", "vessel", "equipmentType"];
+    const masterFields = ["location", "customer", "line", "pol", "pod", "fpod", "vessel", "equipmentType"];
     let newMasterData = {
       locations: [],
-      shippers: [],
+      customers: [],
       lines: [],
       pols: [],
       pods: [],
@@ -178,7 +178,7 @@ function AddBooking() {
       return;
     }
 
-    if (field === "shipper") {
+    if (field === "customer") {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (data.customerEmail.some(email => email && !emailRegex.test(email))) {
         toast.error("Please enter valid customer email addresses.");
@@ -198,7 +198,7 @@ function AddBooking() {
     }
 
     const isDuplicate = currentList.some(item => {
-      if (field === "shipper") {
+      if (field === "customer") {
         return item.name === data.name &&
                item.contactPerson === data.contactPerson &&
                JSON.stringify(item.customerEmail) === JSON.stringify(data.customerEmail) &&
@@ -263,7 +263,7 @@ function AddBooking() {
   const handleAddEntry = async () => {
     if (
       newEntry.location &&
-      newEntry.shipper &&
+      newEntry.customer &&
       newEntry.line &&
       newEntry.pol &&
       newEntry.pod &&
@@ -301,8 +301,8 @@ function AddBooking() {
       await addDoc(collection(db, "entries"), entryData);
 
       await confirmAndAddToMaster("location", { name: newEntry.location });
-      await confirmAndAddToMaster("shipper", { 
-        name: newEntry.shipper, 
+      await confirmAndAddToMaster("customer", { 
+        name: newEntry.customer, 
         contactPerson: "", 
         customerEmail: [], 
         contactNumber: "", 
@@ -322,7 +322,7 @@ function AddBooking() {
       setNewEntry({
         location: "",
         bookingDate: "",
-        shipper: "",
+        customer: "",
         bookingValidity: "",
         line: "",
         bookingNo: "",
@@ -523,7 +523,7 @@ function AddBooking() {
         </div>
         <div className="col-md-4">
           <label>Customer</label>
-          {createSelect("shipper", masterData.shippers)}
+          {createSelect("customer", masterData.customers)}
         </div>
         <div className="col-md-4">
           <label>Booking Validity</label>

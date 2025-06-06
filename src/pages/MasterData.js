@@ -5,7 +5,7 @@ import { toast } from 'react-toastify';
 
 function MasterData() {
   const [newMaster, setNewMaster] = useState({
-    shipper: { name: "", contactPerson: "", customerEmail: [], contactNumber: "", address: "", salesPerson: "", salesPersonEmail: [] },
+    customer: { name: "", contactPerson: "", customerEmail: [], contactNumber: "", address: "", salesPerson: "", salesPersonEmail: [] },
     line: { name: "", contactPerson: "", email: "", contactNumber: "" },
     pol: { name: "" },
     pod: { name: "" },
@@ -15,8 +15,8 @@ function MasterData() {
   });
 
   const fieldDefinitions = {
-    shipper: [
-      { label: "Shipper Name", key: "name", required: true },
+    customer: [
+      { label: "customer Name", key: "name", required: true },
       { label: "Contact Person", key: "contactPerson" },
       { label: "Customer Email (comma-separated)", key: "customerEmail", type: "text" },
       { label: "Contact Number", key: "contactNumber", type: "tel" },
@@ -67,8 +67,8 @@ function MasterData() {
       return;
     }
 
-    // Validate email formats for shipper
-    if (field === "shipper") {
+    // Validate email formats for customer
+    if (field === "customer") {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (data.customerEmail.some(email => email && !emailRegex.test(email))) {
         toast.error("Please enter valid customer email addresses.");
@@ -109,7 +109,7 @@ function MasterData() {
       const requiredFields = fieldDefinitions[field].filter(f => f.required).map(f => f.key);
       if (requiredFields.every(key => newMaster[field][key].trim())) {
         const data = newMaster[field];
-        if (field === "shipper") {
+        if (field === "customer") {
           const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
           if (data.customerEmail.some(email => email && !emailRegex.test(email))) {
             toast.error(`Invalid customer email in ${field}.`);
@@ -128,7 +128,7 @@ function MasterData() {
     if (addedCount > 0) {
       toast.success(`Added ${addedCount} master entr${addedCount > 1 ? "ies" : "y"} successfully!`);
       setNewMaster({
-        shipper: { name: "", contactPerson: "", customerEmail: [], contactNumber: "", address: "", salesPerson: "", salesPersonEmail: [] },
+        customer: { name: "", contactPerson: "", customerEmail: [], contactNumber: "", address: "", salesPerson: "", salesPersonEmail: [] },
         line: { name: "", contactPerson: "", email: "", contactNumber: "" },
         pol: { name: "" },
         pod: { name: "" },
@@ -152,7 +152,7 @@ function MasterData() {
 
     // Enhanced uniqueness check considering all fields
     const isDuplicate = currentList.some(item => {
-      if (field === "shipper") {
+      if (field === "customer") {
         return item.name === data.name &&
                item.contactPerson === data.contactPerson &&
                JSON.stringify(item.customerEmail) === JSON.stringify(data.customerEmail) &&
