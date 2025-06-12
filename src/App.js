@@ -5,6 +5,8 @@ import AddBooking from "./pages/AddBooking";
 import Entries from "./pages/Entries";
 import MasterDataManager from "./pages/MasterDataManager";
 import CompletedFiles from "./pages/CompletedFiles";
+import BookingRequestForm from "./pages/BookingRequestForm";
+import Dashboard from "./components/Dashboard"; // Import the new Dashboard component
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
@@ -15,7 +17,7 @@ function App() {
         {/* Navbar */}
         <nav className="navbar navbar-expand-lg navbar-dark bg-primary">
           <div className="container-fluid">
-            <Link className="navbar-brand" to="/">Dashboard</Link>
+            <Link className="navbar-brand" to="/">📊 Dashboard</Link>
 
             {/* Hamburger for mobile */}
             <button
@@ -37,6 +39,9 @@ function App() {
                   <Link className="nav-link" to="/master">Add Master Data</Link>
                 </li>
                 <li className="nav-item">
+                  <Link className="nav-link" to="/booking-request">Booking Request Form</Link>
+                </li>
+                <li className="nav-item">
                   <Link className="nav-link" to="/booking">Add Booking Entry</Link>
                 </li>
                 <li className="nav-item">
@@ -54,10 +59,11 @@ function App() {
         </nav>
 
         {/* Main Content Area */}
-        <div className="container mt-4">
+        <div className="container-fluid mt-4">
           <Routes>
-            <Route path="/" element={<h2>Welcome to the Dashboard! Please select an option from the menu.</h2>} />
+            <Route path="/" element={<Dashboard />} />
             <Route path="/master" element={<MasterData />} />
+            <Route path="/booking-request" element={<BookingRequestForm />} />
             <Route path="/booking" element={<AddBooking />} />
             <Route path="/entries" element={<Entries />} />
             <Route path="/manage-master" element={<MasterDataManager />} />

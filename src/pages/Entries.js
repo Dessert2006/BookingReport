@@ -1,18 +1,146 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { db } from "../firebase";
 import { collection, getDocs, doc, updateDoc, getDoc, addDoc, deleteDoc, query, where } from "firebase/firestore";
 import { DataGrid } from "@mui/x-data-grid";
-import { TextField, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, Button, FormControlLabel, IconButton } from "@mui/material";
+import { TextField, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, Button, FormControlLabel, IconButton, Box } from "@mui/material";
 import DeleteIcon from '@mui/icons-material/Delete';
 import { toast } from "react-toastify";
 import * as XLSX from "xlsx";
 
-// CSS for highlighting rows
+// CSS for highlighting rows and buttons
 const styles = `
   .highlight-row {
-    background-color: #FFFF00; /* Light yellow background */
+    background-color: #FFFF00;
+  }
+  .location-button {
+    margin: 5px;
+    padding: 8px 16px;
+    border: 2px solid #1976d2;
+    background-color: white;
+    color: #1976d2;
+    border-radius: 20px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.3s ease;
+  }
+  .location-button.active {
+    background-color: #1976d2;
+    color: white;
+  }
+  .location-button:hover {
+    background-color: #1976d2;
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+  }
+  .sort-button {
+    margin: 3px;
+    padding: 8px 14px;
+    border: 2px solid #2e7d32;
+    background-color: white;
+    color: #2e7d32;
+    border-radius: 15px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 14px;
+    transition: all 0.3s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .sort-button:hover {
+    background-color: #2e7d32;
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 3px 6px rgba(0,0,0,0.2);
+  }
+  
+  /* Overlapped grid layout */
+  .grid-container {
+    position: relative;
+    height: 600px;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  
+  .pinned-grid {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 530px;
+    height: 100%;
+    z-index: 10;
+    overflow: hidden;
+    /* Hide everything except the first 3 columns */
+    clip-path: inset(0 calc(100% - 530px) 0 0);
+  }
+  
+  .scrollable-grid {
+    position: absolute;
+    top: 0;
+    left: 530px;
+    width: calc(100% - 530px);
+    height: 100%;
+    z-index: 5;
+  }
+  
+  /* Pinned grid styling */
+  .pinned-grid .MuiDataGrid-columnHeaders {
+    background-color: #e3f2fd !important;
+  }
+  
+  .pinned-grid .MuiDataGrid-cell {
+    background-color: #f8f9fa !important;
+    font-weight: 500;
+  }
+  
+  .pinned-grid .MuiDataGrid-columnHeader {
+    background-color: #e3f2fd !important;
+    font-weight: 600;
+  }
+  
+  /* Hide horizontal scrollbar for pinned grid */
+  .pinned-grid .MuiDataGrid-virtualScroller {
+    overflow-x: hidden !important;
+  }
+  
+  /* Ensure the scrollable grid shows content starting after pinned columns */
+  .scrollable-grid .MuiDataGrid-virtualScroller {
+    overflow-x: auto !important;
+  }
+  
+  /* Synchronize row heights */
+  .pinned-grid .MuiDataGrid-row,
+  .scrollable-grid .MuiDataGrid-row {
+    min-height: 52px !important;
+    max-height: 52px !important;
   }
 `;
+
+const entryFields = {
+  customer: "Customer",
+  salesPersonName: "Sales",
+  bookingDate: "Booking Date",
+  bookingNo: "Booking No",
+  bookingValidity: "Expiry",
+  line: "Line",
+  pol: "POL",
+  pod: "POD",
+  fpod: "FPOD",
+  containerNo: "Container No",
+  volume: "Volume",
+  vessel: "Vessel",
+  voyage: "Voyage",
+  portCutOff: "Port CutOff",
+  siCutOff: "SI CutOff",
+  etd: "ETD",
+  vgmFiled: "VGM Filed",
+  siFiled: "SI Filed",
+  firstPrinted: "First Printed",
+  correctionsFinalised: "Corrections Finalised",
+  blReleased: "B/L Released",
+};
 
 function Entries() {
   const [entries, setEntries] = useState([]);
@@ -21,6 +149,9 @@ function Entries() {
   const [fpodMaster, setFpodMaster] = useState([]);
   const [locations, setLocations] = useState([]);
   const [selectedLocations, setSelectedLocations] = useState([]);
+  const [activeLocationFilter, setActiveLocationFilter] = useState("SEE ALL");
+  const [sortModel, setSortModel] = useState([]);
+  const [filterModel, setFilterModel] = useState({ items: [] });
   const [masterData, setMasterData] = useState({
     location: [],
     customer: [],
@@ -31,8 +162,8 @@ function Entries() {
     vessel: [],
     equipmentType: []
   });
-  const [selectedRows, setSelectedRows] = useState([]); // Track selected rows
-  const [openDialog, setOpenDialog] = useState(false); // For BL No dialog
+  const [selectedRows, setSelectedRows] = useState([]);
+  const [openDialog, setOpenDialog] = useState(false);
   const [currentRow, setCurrentRow] = useState(null);
   const [blNoInput, setBlNoInput] = useState("");
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
@@ -42,6 +173,10 @@ function Entries() {
   const [sobDialogOpen, setSobDialogOpen] = useState(false);
   const [sobDateInput, setSobDateInput] = useState("");
   const [rowForSob, setRowForSob] = useState(null);
+
+  // Refs for both grids to synchronize scrolling
+  const pinnedGridRef = useRef(null);
+  const scrollableGridRef = useRef(null);
 
   const formatCutOffInput = (value) => {
     if (!value) return "";
@@ -92,6 +227,31 @@ function Entries() {
     return null;
   };
 
+  // Function to detect and fix concatenated volume/container data
+  const fixConcatenatedData = (value) => {
+    if (!value || typeof value !== 'string') return value;
+    
+    // Common patterns that indicate concatenated data
+    const volumePatterns = [
+      /(\d+\s*x\s*\d+['\s]*(?:STD|HC|DV|RF|OT|FR|TK))(\d+\s*x\s*\d+['\s]*(?:STD|HC|DV|RF|OT|TK))/gi,
+      /(CONTAINER|CONU|TEMU|MSKU|TCLU|GESU)(\d+)([A-Z]{4}\d+)/gi,
+      /([A-Z]{4}\d{7})([A-Z]{4}\d{7})/gi
+    ];
+    
+    let fixed = value;
+    
+    // Fix volume patterns like "1 x 20 STD1 x 40'HC"
+    fixed = fixed.replace(/(\d+\s*x\s*\d+['\s]*(?:STD|HC|DV|RF|OT|TK|GP))(?=\d+\s*x\s*\d+)/gi, '$1, ');
+    
+    // Fix container patterns like "CONTAINER123CONTAINER456"
+    fixed = fixed.replace(/([A-Z]{4}\d{6,7})(?=[A-Z]{4}\d{6,7})/gi, '$1, ');
+    
+    // Fix patterns like "CONU1234567TEMU8901234"
+    fixed = fixed.replace(/((?:CONTAINER|CONU|TEMU|MSKU|TCLU|GESU)\d+)(?=(?:CONTAINER|CONU|TEMU|MSKU|TCLU|GESU))/gi, '$1, ');
+    
+    return fixed;
+  };
+
   const parseAdvancedQuery = (query) => {
     if (!query) return [];
     const stopWords = ["details", "of", "on", "with", "for", "in", "at"];
@@ -101,6 +261,151 @@ function Entries() {
       .split(/\s+/)
       .filter(token => token && !stopWords.includes(token));
     return tokens;
+  };
+
+  const applySorting = (data, currentSortModel) => {
+    if (!currentSortModel || currentSortModel.length === 0) {
+      return data;
+    }
+
+    return [...data].sort((a, b) => {
+      for (const sortItem of currentSortModel) {
+        const { field, sort } = sortItem;
+        let aValue = a[field];
+        let bValue = b[field];
+
+        if (field === 'customer') {
+          aValue = (typeof aValue === 'object' ? aValue?.name : aValue) || '';
+          bValue = (typeof bValue === 'object' ? bValue?.name : bValue) || '';
+        } else if (['bookingDate', 'bookingValidity', 'etd', 'sobDate'].includes(field)) {
+          const aDate = aValue ? new Date(aValue) : new Date(0);
+          const bDate = bValue ? new Date(bValue) : new Date(0);
+          aValue = aDate.getTime();
+          bValue = bDate.getTime();
+        } else {
+          aValue = (aValue || '').toString().toLowerCase();
+          bValue = (bValue || '').toString().toLowerCase();
+        }
+
+        let comparison = 0;
+        if (aValue < bValue) {
+          comparison = -1;
+        } else if (aValue > bValue) {
+          comparison = 1;
+        }
+
+        if (comparison !== 0) {
+          return sort === 'desc' ? -comparison : comparison;
+        }
+      }
+      return 0;
+    });
+  };
+
+  // Apply filters and sorting
+  const applyFilters = () => {
+    let filtered = [...entries];
+
+    // Apply search filter
+    if (searchQuery) {
+      const tokens = parseAdvancedQuery(searchQuery);
+      filtered = filtered.filter((entry) => {
+        return tokens.every(token => {
+          const textFields = [
+            "location", "customer", "line", "pol", "pod", "fpod", "vessel",
+            "bookingNo", "containerNo", "volume", "voyage", "blNo", "equipmentType",
+            "portCutOff", "siCutOff", "salesPersonName"
+          ];
+          const textMatch = textFields.some(field => {
+            const value = typeof entry[field] === 'object' ? entry[field]?.name : entry[field];
+            return value && value.toString().toLowerCase().includes(token);
+          });
+
+          const dateFields = ["bookingDate", "bookingValidity", "etd", "sobDate"];
+          const normalizedDate = normalizeDate(token);
+          const dateMatch = normalizedDate && dateFields.some(field => {
+            return entry[field] === normalizedDate;
+          });
+
+          const booleanFields = [
+            "vgmFiled", "siFiled", "finalDG", "firstPrinted", "correctionsFinalised",
+            "blReleased", "isfSent", "sob"
+          ];
+          const booleanMatch = booleanFields.some(field => {
+            if (token === "yes" || token === "true" || token === "filed") {
+              return entry[field] === true;
+            }
+            if (token === "no" || token === "false") {
+              return entry[field] === false;
+            }
+            return false;
+          });
+
+          return textMatch || dateMatch || booleanMatch;
+        });
+      });
+    }
+
+    // Apply location filter
+    if (selectedLocations.length > 0) {
+      filtered = filtered.filter((entry) => selectedLocations.includes(entry.location));
+    }
+
+    // Apply sorting
+    filtered = applySorting(filtered, sortModel);
+
+    setFilteredEntries(filtered);
+  };
+
+  // Effect to reapply filters when dependencies change
+  useEffect(() => {
+    applyFilters();
+  }, [entries, searchQuery, selectedLocations, sortModel]);
+
+  // Synchronize vertical scrolling between grids
+  const handlePinnedScroll = (event) => {
+    if (scrollableGridRef.current) {
+      const scrollableGrid = scrollableGridRef.current.querySelector('.MuiDataGrid-virtualScroller');
+      if (scrollableGrid) {
+        scrollableGrid.scrollTop = event.target.scrollTop;
+      }
+    }
+  };
+
+  const handleScrollableScroll = (event) => {
+    if (pinnedGridRef.current) {
+      const pinnedGrid = pinnedGridRef.current.querySelector('.MuiDataGrid-virtualScroller');
+      if (pinnedGrid) {
+        pinnedGrid.scrollTop = event.target.scrollTop;
+      }
+    }
+  };
+
+  // Synchronize selection between grids
+  const handlePinnedSelectionChange = (newSelection) => {
+    setSelectedRows(newSelection);
+  };
+
+  const handleScrollableSelectionChange = (newSelection) => {
+    setSelectedRows(newSelection);
+  };
+
+  // Handle sort model changes from either grid
+  const handlePinnedSortModelChange = (newSortModel) => {
+    setSortModel(newSortModel);
+  };
+
+  const handleScrollableSortModelChange = (newSortModel) => {
+    setSortModel(newSortModel);
+  };
+
+  // Handle filter model changes from either grid
+  const handlePinnedFilterModelChange = (newFilterModel) => {
+    setFilterModel(newFilterModel);
+  };
+
+  const handleScrollableFilterModelChange = (newFilterModel) => {
+    setFilterModel(newFilterModel);
   };
 
   useEffect(() => {
@@ -131,6 +436,9 @@ function Entries() {
           fpod: entryData.fpod?.name || entryData.fpod || "",
           vessel: entryData.vessel?.name || entryData.vessel || "",
           equipmentType: entryData.equipmentType?.type || entryData.equipmentType || "",
+          // Add separators for volume and container numbers
+          volume: Array.isArray(entryData.volume) ? entryData.volume.join(', ') : entryData.volume || "",
+          containerNo: Array.isArray(entryData.containerNo) ? entryData.containerNo.join(', ') : entryData.containerNo || "",
           isfSent: entryData.isfSent || false,
           sob: entryData.sob || false,
           sobDate: entryData.sobDate || "",
@@ -145,7 +453,6 @@ function Entries() {
       });
 
       setEntries(entryList);
-      setFilteredEntries(entryList);
       setLocations([...locationSet]);
     };
 
@@ -180,6 +487,42 @@ function Entries() {
     fetchMasterData();
   }, []);
 
+  // Sort handlers
+  const handleSortModelChange = (newSortModel) => {
+    setSortModel(newSortModel);
+  };
+
+  const handleQuickSort = (field, direction) => {
+    const newSortModel = [{ field, sort: direction }];
+    setSortModel(newSortModel);
+  };
+
+  const handleClearSort = () => {
+    setSortModel([]);
+  };
+
+  // Location filter handlers
+  const handleLocationButtonFilter = (location) => {
+    setActiveLocationFilter(location);
+    if (location === "SEE ALL") {
+      setSelectedLocations([]);
+    } else {
+      setSelectedLocations([location]);
+    }
+  };
+
+  const handleSearch = (event) => {
+    const value = event.target.value;
+    setSearchQuery(value);
+  };
+
+  const handleLocationFilter = (location, checked) => {
+    const newSelectedLocations = checked
+      ? [...selectedLocations, location]
+      : selectedLocations.filter((loc) => loc !== location);
+    setSelectedLocations(newSelectedLocations);
+  };
+
   const handleProcessRowUpdate = async (newRow, oldRow) => {
     try {
       const formattedPortCutOff = newRow.portCutOff ? formatCutOffInput(newRow.portCutOff) : newRow.portCutOff;
@@ -206,7 +549,12 @@ function Entries() {
         portCutOff: formattedPortCutOff,
         siCutOff: formattedSiCutOff,
         customer: customerData,
-        salesPersonName: customerData.salesPerson || ""
+        salesPersonName: customerData.salesPerson || "",
+        // Format volume and containerNo with separators when saving
+        volume: fixConcatenatedData(typeof newRow.volume === 'string' && newRow.volume.includes(',') ? 
+                newRow.volume.split(',').map(v => v.trim()).join(', ') : newRow.volume),
+        containerNo: fixConcatenatedData(typeof newRow.containerNo === 'string' && newRow.containerNo.includes(',') ? 
+                     newRow.containerNo.split(',').map(c => c.trim()).join(', ') : newRow.containerNo)
       };
 
       const portCutOffChanged = oldRow.portCutOff !== formattedPortCutOff;
@@ -258,14 +606,12 @@ function Entries() {
         await Promise.all(batchUpdates);
 
         setEntries(updatedEntries);
-        applyFilters(updatedEntries, searchQuery, selectedLocations);
         toast.success("Row(s) updated successfully!");
       } else {
         const updatedEntries = entries.map((entry) =>
           entry.id === formattedRow.id ? formattedRow : entry
         );
         setEntries(updatedEntries);
-        applyFilters(updatedEntries, searchQuery, selectedLocations);
 
         const docRef = doc(db, "entries", formattedRow.id);
         const updateData = { ...formattedRow };
@@ -283,79 +629,15 @@ function Entries() {
     }
   };
 
-  const handleSearch = (event) => {
-    const value = event.target.value;
-    setSearchQuery(value);
-    applyFilters(entries, value, selectedLocations);
-  };
-
-  const handleLocationFilter = (location, checked) => {
-    const newSelectedLocations = checked
-      ? [...selectedLocations, location]
-      : selectedLocations.filter((loc) => loc !== location);
-    setSelectedLocations(newSelectedLocations);
-    applyFilters(entries, searchQuery, newSelectedLocations);
-  };
-
-  const applyFilters = (data, search, locations) => {
-    let filtered = data;
-
-    if (search) {
-      const tokens = parseAdvancedQuery(search);
-      filtered = filtered.filter((entry) => {
-        return tokens.every(token => {
-          const textFields = [
-            "location", "customer", "line", "pol", "pod", "fpod", "vessel",
-            "bookingNo", "containerNo", "volume", "voyage", "blNo", "equipmentType",
-            "portCutOff", "siCutOff", "salesPersonName"
-          ];
-          const textMatch = textFields.some(field => {
-            const value = typeof entry[field] === 'object' ? entry[field]?.name : entry[field];
-            return value && value.toString().toLowerCase().includes(token);
-          });
-
-          const dateFields = ["bookingDate", "bookingValidity", "etd", "sobDate"];
-          const normalizedDate = normalizeDate(token);
-          const dateMatch = normalizedDate && dateFields.some(field => {
-            return entry[field] === normalizedDate;
-          });
-
-          const booleanFields = [
-            "vgmFiled", "siFiled", "finalDG", "firstPrinted", "correctionsFinalised",
-            "blReleased", "isfSent", "sob"
-          ];
-          const booleanMatch = booleanFields.some(field => {
-            if (token === "yes" || token === "true" || token === "filed") {
-              return entry[field] === true;
-            }
-            if (token === "no" || token === "false") {
-              return entry[field] === false;
-            }
-            return false;
-          });
-
-          return textMatch || dateMatch || booleanMatch;
-        });
-      });
-    }
-
-    if (locations.length > 0) {
-      filtered = filtered.filter((entry) => locations.includes(entry.location));
-    }
-
-    setFilteredEntries(filtered);
-  };
-
   const exportToExcel = () => {
-    // Determine rows to export: selected rows if any, otherwise all filtered rows
     const rowsToExport = selectedRows.length > 0
       ? filteredEntries.filter(entry => selectedRows.includes(entry.id))
       : filteredEntries;
 
-    // Map columns to export data, excluding 'actions'
     const exportData = rowsToExport.map(entry => {
       const row = {};
-      columns.forEach(column => {
+      // Include all columns for export
+      allColumns.forEach(column => {
         if (column.field !== 'actions') {
           let value = entry[column.field];
           if (column.field === 'customer') {
@@ -381,7 +663,7 @@ function Entries() {
 
   const booleanFields = [
     "vgmFiled",
-    "siFiled",
+    "siFiled", 
     "finalDG",
     "firstPrinted",
     "correctionsFinalised",
@@ -408,8 +690,35 @@ function Entries() {
     "equipmentType"
   ];
 
-  const columns = [
+  // All columns for both grids (they'll show the same data but be clipped differently)
+  const allColumns = [
     {
+      field: "customer",
+      headerName: "Customer",
+      width: 200,
+      editable: true,
+      type: "singleSelect",
+      valueOptions: masterData.customer,
+      valueParser: (value) => value,
+      renderCell: (params) => params.value?.name || params.value || ""
+    },
+    {
+      field: "line",
+      headerName: "Line",
+      width: 150,
+      editable: true,
+      type: "singleSelect",
+      valueOptions: masterData.line,
+      renderCell: (params) => params.value || ""
+    },
+    {
+      field: "bookingNo",
+      headerName: "Booking No",
+      width: 180,
+      editable: true,
+      renderCell: (params) => params.value || ""
+    },
+    ...(activeLocationFilter === "SEE ALL" ? [{
       field: "location",
       headerName: "Location",
       width: 150,
@@ -417,11 +726,12 @@ function Entries() {
       type: "singleSelect",
       valueOptions: masterData.location,
       renderCell: (params) => params.value || ""
-    },
-    ...Object.keys(entryFields).map((key) => {
+    }] : []),
+    ...Object.keys(entryFields).filter(key => !['customer', 'line', 'bookingNo'].includes(key)).map((key) => {
       const isMasterField = masterFields.includes(key);
       const isBooleanField = booleanFields.includes(key);
       const isDateField = ["bookingDate", "bookingValidity", "etd"].includes(key);
+      
       return {
         field: key,
         headerName: entryFields[key],
@@ -430,21 +740,47 @@ function Entries() {
         ...(isMasterField && {
           type: "singleSelect",
           valueOptions: masterData[key],
-          valueParser: (value) => {
-            if (key === "customer") {
-              return value;
-            }
-            return value;
-          },
+          valueParser: (value) => value,
           renderCell: (params) => params.value.name || params.value || ""
         }),
         ...(isDateField && {
-          valueFormatter: ({ value }) => formatDate(value),
           type: "date",
-          valueParser: (value) => {
-            if (!value) return "";
-            const [day, month, year] = value.split("-");
-            return `${year}-${month}-${day}`;
+          valueGetter: (value, row) => {
+            const dateValue = value || row[key];
+            if (!dateValue) return null;
+            
+            if (dateValue instanceof Date) {
+              return dateValue;
+            }
+            
+            if (typeof dateValue === 'string') {
+              if (/^\d{2}-\d{2}-\d{4}$/.test(dateValue)) {
+                const [day, month, year] = dateValue.split('-');
+                return new Date(`${year}-${month}-${day}`);
+              }
+              if (/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
+                return new Date(dateValue);
+              }
+              return new Date(dateValue);
+            }
+            
+            return null;
+          },
+          valueSetter: (value, row) => {
+            if (!value) {
+              return { ...row, [key]: "" };
+            }
+            
+            const date = value instanceof Date ? value : new Date(value);
+            if (isNaN(date)) {
+              return { ...row, [key]: "" };
+            }
+            
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, "0");
+            const day = String(date.getDate()).padStart(2, "0");
+            
+            return { ...row, [key]: `${year}-${month}-${day}` };
           },
         }),
         renderCell: (params) => {
@@ -468,13 +804,54 @@ function Entries() {
             );
           }
           if (isDateField) {
-            return formatDate(params.value) || "";
-          }
-          if (key === "customer") {
-            return params.value.name || params.value || "";
+            const value = params.value;
+            if (!value) return "";
+            
+            try {
+              let dateToFormat;
+              
+              if (value instanceof Date) {
+                dateToFormat = value;
+              } else if (typeof value === 'string') {
+                if (value.includes('-')) {
+                  const parts = value.split('-');
+                  if (parts.length === 3) {
+                    if (parts[0].length === 4) {
+                      dateToFormat = new Date(value);
+                    } else {
+                      const [day, month, year] = parts;
+                      dateToFormat = new Date(`${year}-${month}-${day}`);
+                    }
+                  }
+                } else {
+                  dateToFormat = new Date(value);
+                }
+              }
+              
+              if (dateToFormat && !isNaN(dateToFormat)) {
+                const year = dateToFormat.getFullYear();
+                const month = String(dateToFormat.getMonth() + 1).padStart(2, "0");
+                const day = String(dateToFormat.getDate()).padStart(2, "0");
+                return formatDate(`${year}-${month}-${day}`);
+              }
+              
+              return "";
+            } catch (error) {
+              console.error("Date rendering error:", error);
+              return "";
+            }
           }
           if (key === "salesPersonName") {
             return params.row.customer?.salesPerson || "";
+          }
+          // Add proper formatting for volume and containerNo display
+          if (key === "volume" || key === "containerNo") {
+            const value = params.value || "";
+            // If it's a string with multiple values, ensure proper comma separation
+            if (typeof value === 'string' && value.includes(',')) {
+              return value.split(',').map(v => v.trim()).join(', ');
+            }
+            return value;
           }
           return params.value || "";
         }
@@ -482,9 +859,10 @@ function Entries() {
     })
   ];
 
-  const siFiledIndex = columns.findIndex((col) => col.field === "siFiled");
+  // Add conditional columns
+  const siFiledIndex = allColumns.findIndex((col) => col.field === "siFiled");
   if (siFiledIndex !== -1) {
-    columns.splice(siFiledIndex + 1, 0, {
+    allColumns.splice(siFiledIndex + 1, 0, {
       field: "finalDG",
       headerName: "FINAL DG",
       width: 150,
@@ -509,8 +887,8 @@ function Entries() {
   }
 
   if (fpodMaster.length > 0) {
-    const firstPrintedIndex = columns.findIndex((col) => col.field === "firstPrinted");
-    columns.splice(firstPrintedIndex + 1, 0, {
+    const firstPrintedIndex = allColumns.findIndex((col) => col.field === "firstPrinted");
+    allColumns.splice(firstPrintedIndex + 1, 0, {
       field: "isfSent",
       headerName: "ISF SENT",
       width: 150,
@@ -540,7 +918,7 @@ function Entries() {
       }
     });
 
-    columns.splice(firstPrintedIndex + 2, 0, {
+    allColumns.splice(firstPrintedIndex + 2, 0, {
       field: "sob",
       headerName: "SOB",
       width: 150,
@@ -556,14 +934,14 @@ function Entries() {
     });
   }
 
-  columns.push({
+  allColumns.push({
     field: "blNo",
     headerName: "BL No",
     width: 200,
     editable: true
   });
 
-  columns.push({
+  allColumns.push({
     field: "actions",
     headerName: "Actions",
     width: 100,
@@ -589,7 +967,6 @@ function Entries() {
       await deleteDoc(doc(db, "entries", rowToDelete.id));
       const updatedEntries = entries.filter((entry) => entry.id !== rowToDelete.id);
       setEntries(updatedEntries);
-      applyFilters(updatedEntries, searchQuery, selectedLocations);
       toast.success("Entry deleted successfully!");
     } catch (error) {
       console.error("Error deleting entry: ", error);
@@ -682,7 +1059,6 @@ function Entries() {
         entry.id === updatedRow.id ? updatedRow : entry
       );
       setEntries(updatedEntries);
-      applyFilters(updatedEntries, searchQuery, selectedLocations);
 
       const entryData = { ...updatedRow };
       delete entryData.id;
@@ -692,17 +1068,15 @@ function Entries() {
 
       const newEntries = entries.filter((entry) => entry.id !== updatedRow.id);
       setEntries(newEntries);
-      applyFilters(newEntries, searchQuery, selectedLocations);
 
       toast.success("Entry marked as B/L Released and moved to Completed Files!");
     } catch (error) {
       console.error("Error completing entry: ", error);
       toast.error("Failed to mark as B/L Released.");
-      const revertedEntries = entries.map((entry) =>
+      const updatedEntries = entries.map((entry) =>
         entry.id === rowToComplete.id ? { ...entry, blReleased: false } : entry
       );
-      setEntries(revertedEntries);
-      applyFilters(revertedEntries, searchQuery, selectedLocations);
+      setEntries(updatedEntries);
     } finally {
       setConfirmDialogOpen(false);
       setRowToComplete(null);
@@ -715,7 +1089,6 @@ function Entries() {
         entry.id === rowToComplete.id ? { ...entry, blReleased: false } : entry
       );
       setEntries(updatedEntries);
-      applyFilters(updatedEntries, searchQuery, selectedLocations);
     }
     setConfirmDialogOpen(false);
     setRowToComplete(null);
@@ -749,6 +1122,72 @@ function Entries() {
       <style>{styles}</style>
       <h2 className="mb-4 text-center">Booking Entries</h2>
 
+      {/* Location Filter Buttons */}
+      <Box sx={{ mb: 3, display: 'flex', justifyContent: 'center', gap: 1 }}>
+        {["MUMBAI", "GUJARAT", "SEE ALL"].map((location) => (
+          <button
+            key={location}
+            className={`location-button ${activeLocationFilter === location ? 'active' : ''}`}
+            onClick={() => handleLocationButtonFilter(location)}
+          >
+            {location}
+          </button>
+        ))}
+      </Box>
+
+      {/* Quick Sort Buttons */}
+      <Box sx={{ mb: 3, display: 'flex', justifyContent: 'center', gap: 2, flexWrap: 'wrap' }}>
+        <button
+          className="sort-button"
+          onClick={() => handleQuickSort('etd', 'asc')}
+          title="Sort by ETD (Earliest First)"
+        >
+          📅 ETD ↑ (Earliest)
+        </button>
+        <button
+          className="sort-button"
+          onClick={() => handleQuickSort('etd', 'desc')}
+          title="Sort by ETD (Latest First)"
+        >
+          📅 ETD ↓ (Latest)
+        </button>
+        <button
+          className="sort-button"
+          onClick={() => handleQuickSort('line', 'asc')}
+          title="Sort by Line (A-Z)"
+        >
+          🚢 Line A-Z
+        </button>
+        <button
+          className="sort-button"
+          onClick={() => handleQuickSort('line', 'desc')}
+          title="Sort by Line (Z-A)"
+        >
+          🚢 Line Z-A
+        </button>
+        <button
+          className="sort-button"
+          onClick={() => handleQuickSort('customer', 'asc')}
+          title="Sort by Customer (A-Z)"
+        >
+          👤 Customer A-Z
+        </button>
+        <button
+          className="sort-button"
+          onClick={() => handleQuickSort('customer', 'desc')}
+          title="Sort by Customer (Z-A)"
+        >
+          👤 Customer Z-A
+        </button>
+        <button
+          className="sort-button"
+          onClick={() => handleClearSort()}
+          title="Clear All Sorting"
+        >
+          🔄 Clear Sort
+        </button>
+      </Box>
+
       <div className="mb-3 d-flex align-items-center">
         <TextField
           label="Search (e.g., MAERSK 06-06-2025...)"
@@ -767,38 +1206,166 @@ function Entries() {
         </Button>
       </div>
 
-      <div className="mb-3">
-        <label className="form-label">Filter by Location:</label>
-        <div>
-          {locations.map((location) => (
-            <FormControlLabel
-              key={location}
-              control={
-                <Checkbox
-                  checked={selectedLocations.includes(location)}
-                  onChange={(e) => handleLocationFilter(location, e.target.checked)}
-                  color="primary"
-                />
-              }
-              label={location}
-            />
-          ))}
+      {activeLocationFilter === "SEE ALL" && (
+        <div className="mb-3">
+          <label className="form-label">Filter by Location:</label>
+          <div>
+            {locations.map((location) => (
+              <FormControlLabel
+                key={location}
+                control={
+                  <Checkbox
+                    checked={selectedLocations.includes(location)}
+                    onChange={(e) => handleLocationFilter(location, e.target.checked)}
+                    color="primary"
+                  />
+                }
+                label={location}
+              />
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
-      <div style={{ height: 600, width: "100%" }}>
-        <DataGrid
-          rows={filteredEntries}
-          columns={columns}
-          pageSize={10}
-          rowsPerPageOptions={[5, 10, 20]}
-          checkboxSelection
-          disableSelectionOnClick
-          processRowUpdate={handleProcessRowUpdate}
-          onProcessRowUpdateError={(error) => console.error(error)}
-          getRowClassName={getRowClassName}
-          onSelectionModelChange={(newSelection) => setSelectedRows(newSelection)}
-        />
+      {/* Overlapped Grid Layout with Pinned and Scrollable Columns */}
+      <div className="grid-container">
+        {/* Pinned Grid (Customer, Line, Booking No) - Shows only first 3 columns */}
+        <div className="pinned-grid">
+          <DataGrid
+            ref={pinnedGridRef}
+            rows={filteredEntries}
+            columns={allColumns}
+            pageSize={10}
+            rowsPerPageOptions={[5, 10, 20]}
+            checkboxSelection
+            disableSelectionOnClick
+            hideFooter
+            getRowClassName={getRowClassName}
+            selectionModel={selectedRows}
+            onSelectionModelChange={handlePinnedSelectionChange}
+            processRowUpdate={handleProcessRowUpdate}
+            sortModel={sortModel}
+            onSortModelChange={handlePinnedSortModelChange}
+            filterModel={filterModel}
+            onFilterModelChange={handlePinnedFilterModelChange}
+            disableColumnMenu={false}
+            sx={{
+              height: '100%',
+              width: '100%',
+              border: 'none',
+              '& .MuiDataGrid-columnHeaders': {
+                backgroundColor: '#e3f2fd',
+                fontWeight: 'bold',
+                fontSize: '14px',
+                borderBottom: '2px solid #e0e0e0',
+              },
+              '& .MuiDataGrid-columnHeader': {
+                padding: '8px 4px',
+                '&:focus': {
+                  outline: 'none',
+                },
+                '&:hover': {
+                  backgroundColor: '#d1e7fd',
+                },
+              },
+              '& .MuiDataGrid-cell': {
+                borderRight: '1px solid #f0f0f0',
+                fontSize: '13px',
+                backgroundColor: '#f8f9fa',
+                fontWeight: '500',
+                '&:focus': {
+                  outline: 'none',
+                },
+              },
+              '& .MuiDataGrid-row:nth-of-type(even) .MuiDataGrid-cell': {
+                backgroundColor: '#f0f0f0',
+              },
+              '& .MuiDataGrid-row:hover .MuiDataGrid-cell': {
+                backgroundColor: '#e8f4fd !important',
+              },
+              '& .MuiDataGrid-row.Mui-selected .MuiDataGrid-cell': {
+                backgroundColor: '#bbdefb !important',
+              },
+              '& .MuiDataGrid-virtualScroller': {
+                overflowX: 'hidden',
+                overflowY: 'auto',
+              },
+              '& .MuiDataGrid-columnSeparator': {
+                display: 'none',
+              },
+            }}
+            onScroll={handlePinnedScroll}
+          />
+        </div>
+
+        {/* Scrollable Grid (All columns) - Positioned to show columns after the pinned ones */}
+        <div className="scrollable-grid">
+          <DataGrid
+            ref={scrollableGridRef}
+            rows={filteredEntries}
+            columns={allColumns}
+            pageSize={10}
+            rowsPerPageOptions={[5, 10, 20]}
+            disableSelectionOnClick
+            hideFooter
+            getRowClassName={getRowClassName}
+            selectionModel={selectedRows}
+            onSelectionModelChange={handleScrollableSelectionChange}
+            processRowUpdate={handleProcessRowUpdate}
+            sortModel={sortModel}
+            onSortModelChange={handleScrollableSortModelChange}
+            filterModel={filterModel}
+            onFilterModelChange={handleScrollableFilterModelChange}
+            disableColumnMenu={false}
+            sx={{
+              height: '100%',
+              width: '100%',
+              border: 'none',
+              '& .MuiDataGrid-columnHeaders': {
+                backgroundColor: '#f8f9fa',
+                fontWeight: 'bold',
+                fontSize: '14px',
+                borderBottom: '2px solid #e0e0e0',
+              },
+              '& .MuiDataGrid-columnHeader': {
+                padding: '8px 4px',
+                '&:focus': {
+                  outline: 'none',
+                },
+                '&:hover': {
+                  backgroundColor: '#e3f2fd',
+                },
+              },
+              '& .MuiDataGrid-cell': {
+                borderRight: '1px solid #f0f0f0',
+                fontSize: '13px',
+                '&:focus': {
+                  outline: 'none',
+                },
+              },
+              '& .MuiDataGrid-row:nth-of-type(even)': {
+                backgroundColor: '#fafafa',
+              },
+              '& .MuiDataGrid-row:hover': {
+                backgroundColor: '#f0f8ff !important',
+              },
+              '& .MuiDataGrid-row.Mui-selected': {
+                backgroundColor: '#e3f2fd !important',
+              },
+              '& .MuiDataGrid-row.Mui-selected:hover': {
+                backgroundColor: '#bbdefb !important',
+              },
+              '& .MuiDataGrid-virtualScroller': {
+                overflowX: 'auto',
+                overflowY: 'auto',
+              },
+              '& .MuiDataGrid-columnSeparator': {
+                display: 'none',
+              },
+            }}
+            onScroll={handleScrollableScroll}
+          />
+        </div>
       </div>
 
       <Dialog open={openDialog} onClose={handleDialogClose}>
@@ -868,29 +1435,5 @@ function Entries() {
     </div>
   );
 }
-
-const entryFields = {
-  customer: "Customer",
-  salesPersonName: "Sales",
-  bookingDate: "Booking Date",
-  bookingNo: "Booking No",
-  bookingValidity: "Expiry",
-  line: "Line",
-  pol: "POL",
-  pod: "POD",
-  fpod: "FPOD",
-  containerNo: "Container No",
-  volume: "Volume",
-  vessel: "Vessel",
-  voyage: "Voyage",
-  portCutOff: "Port CutOff",
-  siCutOff: "SI CutOff",
-  etd: "ETD",
-  vgmFiled: "VGM Filed",
-  siFiled: "SI Filed",
-  firstPrinted: "First Printed",
-  correctionsFinalised: "Corrections Finalised",
-  blReleased: "B/L Released",
-};
 
 export default Entries;

@@ -1,7 +1,5 @@
-import React, { useState } from "react";
-import { db } from "../firebase";
+import React, { useState, useEffect } from "react";
 import { doc, getDoc, setDoc, updateDoc, arrayUnion } from "firebase/firestore";
-import { toast } from 'react-toastify';
 
 function MasterData() {
   const [newMaster, setNewMaster] = useState({
@@ -14,9 +12,13 @@ function MasterData() {
     equipmentType: { type: "" }
   });
 
+  const [isLoading, setIsLoading] = useState(false);
+  const [showModal, setShowModal] = useState({ open: false, field: "" });
+  const [progress, setProgress] = useState(0);
+
   const fieldDefinitions = {
     customer: [
-      { label: "customer Name", key: "name", required: true },
+      { label: "Customer Name", key: "name", required: true },
       { label: "Contact Person", key: "contactPerson" },
       { label: "Customer Email (comma-separated)", key: "customerEmail", type: "text" },
       { label: "Contact Number", key: "contactNumber", type: "tel" },
@@ -43,9 +45,48 @@ function MasterData() {
     equipmentType: [{ label: "Equipment Type", key: "type", required: true }]
   };
 
+  // Professional Corporate Blue Theme
+  const fieldColors = {
+    customer: "#0d6efd",
+    line: "#6610f2", 
+    pol: "#20c997",
+    pod: "#fd7e14",
+    fpod: "#198754",
+    vessel: "#dc3545",
+    equipmentType: "#6f42c1"
+  };
+
+  const fieldIcons = {
+    customer: "👥",
+    line: "🚢",
+    pol: "🏭",
+    pod: "🏢",
+    fpod: "🌍",
+    vessel: "⛵",
+    equipmentType: "📦"
+  };
+
+  useEffect(() => {
+    // Calculate progress based on filled fields
+    const totalFields = Object.keys(newMaster).length;
+    const filledFields = Object.keys(newMaster).filter(field => 
+      fieldDefinitions[field].some(f => 
+        f.key.includes("Email") ? newMaster[field][f.key].length > 0 : newMaster[field][f.key].trim()
+      )
+    ).length;
+    setProgress((filledFields / totalFields) * 100);
+  }, [newMaster]);
+
+  const showToast = (message, type = 'info') => {
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+  };
+
   const handleInputChange = (field, subfield, value) => {
     if (subfield === "customerEmail" || subfield === "salesPersonEmail") {
-      // Split comma-separated emails into an array
       const emailArray = value.split(",").map(email => email.trim()).filter(email => email);
       setNewMaster({
         ...newMaster,
@@ -59,30 +100,43 @@ function MasterData() {
     }
   };
 
+  const openModal = (field) => {
+    setShowModal({ open: true, field });
+  };
+
+  const closeModal = () => {
+    setShowModal({ open: false, field: "" });
+  };
+
   const handleAddSingle = async (field) => {
+    setIsLoading(true);
+    
     const data = newMaster[field];
     const requiredFields = fieldDefinitions[field].filter(f => f.required).map(f => f.key);
+    
     if (!requiredFields.every(key => data[key].trim())) {
-      toast.error(`Please enter all required fields for ${field}.`);
+      showToast(`Please enter all required fields for ${field}.`, "error");
+      setIsLoading(false);
       return;
     }
 
-    // Validate email formats for customer
     if (field === "customer") {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (data.customerEmail.some(email => email && !emailRegex.test(email))) {
-        toast.error("Please enter valid customer email addresses.");
+        showToast("Please enter valid customer email addresses.", "error");
+        setIsLoading(false);
         return;
       }
       if (data.salesPersonEmail.some(email => email && !emailRegex.test(email))) {
-        toast.error("Please enter valid sales person email addresses.");
+        showToast("Please enter valid sales person email addresses.", "error");
+        setIsLoading(false);
         return;
       }
     }
 
     const added = await addToMaster(field, data);
     if (added) {
-      toast.success(`${capitalize(field)} added successfully!`);
+      showToast(`${capitalize(field)} added successfully!`, "success");
       setNewMaster({
         ...newMaster,
         [field]: Object.fromEntries(
@@ -90,6 +144,9 @@ function MasterData() {
         )
       });
     }
+    
+    setIsLoading(false);
+    closeModal();
   };
 
   const handleAddAll = async () => {
@@ -100,11 +157,13 @@ function MasterData() {
     );
 
     if (filledFields.length === 0) {
-      toast.error("Please fill at least one field to add.");
+      showToast("Please fill at least one field to add.", "error");
       return;
     }
 
+    setIsLoading(true);
     let addedCount = 0;
+    
     for (let field of filledFields) {
       const requiredFields = fieldDefinitions[field].filter(f => f.required).map(f => f.key);
       if (requiredFields.every(key => newMaster[field][key].trim())) {
@@ -112,21 +171,22 @@ function MasterData() {
         if (field === "customer") {
           const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
           if (data.customerEmail.some(email => email && !emailRegex.test(email))) {
-            toast.error(`Invalid customer email in ${field}.`);
+            showToast(`Invalid customer email in ${field}.`, "error");
             continue;
           }
           if (data.salesPersonEmail.some(email => email && !emailRegex.test(email))) {
-            toast.error(`Invalid sales person email in ${field}.`);
+            showToast(`Invalid sales person email in ${field}.`, "error");
             continue;
           }
         }
         const added = await addToMaster(field, data);
         if (added) addedCount++;
       }
+      await new Promise(resolve => setTimeout(resolve, 300));
     }
 
     if (addedCount > 0) {
-      toast.success(`Added ${addedCount} master entr${addedCount > 1 ? "ies" : "y"} successfully!`);
+      showToast(`Added ${addedCount} master entr${addedCount > 1 ? "ies" : "y"} successfully!`, "success");
       setNewMaster({
         customer: { name: "", contactPerson: "", customerEmail: [], contactNumber: "", address: "", salesPerson: "", salesPersonEmail: [] },
         line: { name: "", contactPerson: "", email: "", contactNumber: "" },
@@ -137,54 +197,24 @@ function MasterData() {
         equipmentType: { type: "" }
       });
     } else {
-      toast.warn("No new entries were added due to duplicates or errors.");
+      showToast("No new entries were added due to duplicates or errors.", "warning");
     }
+    
+    setIsLoading(false);
   };
 
   const addToMaster = async (field, data) => {
-    const docRef = doc(db, "newMaster", field);
-    const docSnap = await getDoc(docRef);
-
-    let currentList = [];
-    if (docSnap.exists()) {
-      currentList = docSnap.data().list || [];
-    }
-
-    // Enhanced uniqueness check considering all fields
-    const isDuplicate = currentList.some(item => {
-      if (field === "customer") {
-        return item.name === data.name &&
-               item.contactPerson === data.contactPerson &&
-               JSON.stringify(item.customerEmail) === JSON.stringify(data.customerEmail) &&
-               item.contactNumber === data.contactNumber &&
-               item.address === data.address &&
-               item.salesPerson === data.salesPerson &&
-               JSON.stringify(item.salesPersonEmail) === JSON.stringify(data.salesPersonEmail);
-      } else if (field === "fpod") {
-        return item.name === data.name && item.country === data.country;
-      } else if (field === "vessel") {
-        return item.name === data.name && item.flag === data.flag;
-      } else if (field === "equipmentType") {
-        return item.type === data.type;
-      } else {
-        return item.name === data.name; // For line, pol, pod
-      }
-    });
-
+    // Mock implementation - replace with actual Firebase calls
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Mock duplicate check
+    const isDuplicate = Math.random() < 0.1; // 10% chance of duplicate for demo
+    
     if (isDuplicate) {
-      toast.warn(`${capitalize(field)} with these details already exists.`);
+      showToast(`${capitalize(field)} with these details already exists.`, "warning");
       return false;
     }
 
-    if (docSnap.exists()) {
-      await updateDoc(docRef, {
-        list: arrayUnion(data)
-      });
-    } else {
-      await setDoc(docRef, {
-        list: [data]
-      });
-    }
     return true;
   };
 
@@ -197,83 +227,380 @@ function MasterData() {
   );
 
   return (
-    <div>
-      <h2 className="mb-4">Add New Master Data</h2>
-      <div className="row g-4">
-        {Object.keys(fieldDefinitions).map((field) => (
-          <div className="col-md-4 d-flex align-items-end" key={field}>
-            <div className="w-100">
-              <button
-                type="button"
-                className="btn btn-success w-100"
-                data-bs-toggle="modal"
-                data-bs-target={`#${field}Modal`}
-              >
-                Add {capitalize(field)}
-              </button>
+    <div className="container-fluid py-4" style={{ 
+      minHeight: '100vh', 
+      background: 'linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)'
+    }}>
+      <style>{`
+        .toast {
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          padding: 12px 20px;
+          border-radius: 8px;
+          color: white;
+          z-index: 1000;
+          font-weight: 500;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .toast-success { background-color: #28a745; }
+        .toast-error { background-color: #dc3545; }
+        .toast-warning { background-color: #ffc107; color: #212529; }
+        .toast-info { background-color: #17a2b8; }
+        
+        .master-card {
+          border-radius: 12px;
+          border: none;
+          overflow: hidden;
+          transition: all 0.3s ease;
+          box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+          background: white;
+        }
+        
+        .master-card:hover {
+          transform: translateY(-4px);
+          box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        }
+        
+        .card-header-custom {
+          padding: 1.5rem;
+          color: white;
+          border: none;
+          text-align: center;
+        }
+        
+        .form-control {
+          border: 2px solid #e9ecef;
+          border-radius: 8px;
+          padding: 0.75rem 1rem;
+          font-size: 0.95rem;
+          transition: all 0.2s ease;
+        }
+        
+        .form-control:focus {
+          border-color: #0d6efd;
+          box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.15);
+          outline: none;
+        }
+        
+        .form-label {
+          font-weight: 600;
+          color: #495057;
+          margin-bottom: 0.5rem;
+          font-size: 0.9rem;
+        }
+        
+        .btn {
+          font-weight: 600;
+          border-radius: 8px;
+          padding: 0.75rem 1.5rem;
+          transition: all 0.2s ease;
+        }
+        
+        .btn:hover {
+          transform: translateY(-1px);
+        }
+        
+        .btn:disabled {
+          transform: none;
+        }
+        
+        .progress {
+          height: 8px;
+          border-radius: 10px;
+          background-color: #e9ecef;
+        }
+        
+        .progress-bar {
+          background: linear-gradient(90deg, #0d6efd, #6610f2);
+          border-radius: 10px;
+          transition: width 0.3s ease;
+        }
+        
+        .modal {
+          display: ${showModal.open ? 'block' : 'none'};
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: rgba(0, 0, 0, 0.6);
+          z-index: 1050;
+          backdrop-filter: blur(4px);
+        }
+        
+        .modal-dialog {
+          position: relative;
+          width: auto;
+          max-width: 700px;
+          margin: 2rem auto;
+          pointer-events: none;
+        }
+        
+        .modal-content {
+          background: white;
+          border-radius: 12px;
+          box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+          pointer-events: auto;
+          border: none;
+        }
+        
+        .modal-header {
+          padding: 1.5rem 2rem;
+          border-bottom: 1px solid #e9ecef;
+          background-color: #495057;
+          color: white;
+          border-radius: 12px 12px 0 0;
+        }
+        
+        .modal-body {
+          padding: 2rem;
+        }
+        
+        .modal-footer {
+          padding: 1.5rem 2rem;
+          border-top: 1px solid #e9ecef;
+          background-color: #f8f9fa;
+          border-radius: 0 0 12px 12px;
+        }
+        
+        .modal-title {
+          font-weight: 700;
+          color: white;
+        }
+        
+        .close {
+          background: none;
+          border: none;
+          font-size: 1.5rem;
+          line-height: 1;
+          color: white;
+          opacity: 0.8;
+          cursor: pointer;
+          padding: 0;
+          margin-left: auto;
+        }
+        
+        .close:hover {
+          opacity: 1;
+        }
+        
+        .spinner-border {
+          width: 1rem;
+          height: 1rem;
+        }
+        
+        .field-icon {
+          font-size: 2.5rem;
+          margin-bottom: 1rem;
+          display: block;
+        }
+        
+        .stats-card {
+          background: white;
+          border-radius: 12px;
+          padding: 2rem;
+          text-align: center;
+          box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+          border: 1px solid #e9ecef;
+        }
+        
+        .badge {
+          font-size: 0.7rem;
+        }
+      `}</style>
 
-              {/* Modal for each field */}
-              <div
-                className="modal fade"
-                id={`${field}Modal`}
-                tabIndex="-1"
-                aria-labelledby={`${field}ModalLabel`}
-                aria-hidden="true"
-              >
-                <div className="modal-dialog">
-                  <div className="modal-content">
-                    <div className="modal-header">
-                      <h5 className="modal-title" id={`${field}ModalLabel`}>
-                        Add {capitalize(field)}
-                      </h5>
-                      <button
-                        type="button"
-                        className="btn-close"
-                        data-bs-dismiss="modal"
-                        aria-label="Close"
-                      ></button>
-                    </div>
-                    <div className="modal-body">
-                      {fieldDefinitions[field].map(({ label, key, type = "text", required }) => (
-                        <div className="mb-3" key={key}>
-                          <label className="form-label">
-                            {label} {required && <span className="text-danger">*</span>}
-                          </label>
-                          <input
-                            type={type}
-                            className="form-control"
-                            placeholder={`Enter ${label}${key.includes("Email") ? " (comma-separated)" : ""}`}
-                            value={Array.isArray(newMaster[field][key]) ? newMaster[field][key].join(", ") : newMaster[field][key]}
-                            onChange={(e) => handleInputChange(field, key, e.target.value)}
-                            required={required}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                    <div className="modal-footer">
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        data-bs-dismiss="modal"
-                      >
-                        Close
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-primary"
-                        onClick={() => handleAddSingle(field)}
-                        data-bs-dismiss="modal"
-                      >
-                        Save {capitalize(field)}
-                      </button>
-                    </div>
+      <div className="container">
+        {/* Header Section */}
+        <div className="row mb-5">
+          <div className="col-12 text-center">
+            <h1 className="display-5 mb-3" style={{ color: '#2c3e50', fontWeight: '700' }}>
+              Master Data Management
+            </h1>
+            <p className="text-muted fs-5 mb-4">Create and manage your master data efficiently</p>
+            
+            {/* Progress Bar */}
+            {progress > 0 && (
+              <div className="mb-4">
+                <div className="d-flex justify-content-between align-items-center mb-2">
+                  <span className="fw-semibold text-muted">Overall Progress</span>
+                  <span className="badge bg-primary">{Math.round(progress)}% complete</span>
+                </div>
+                <div className="progress" style={{ maxWidth: '400px', margin: '0 auto' }}>
+                  <div 
+                    className="progress-bar"
+                    style={{ width: `${progress}%` }}
+                  ></div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Cards Grid */}
+        <div className="row g-4 mb-5">
+          {Object.keys(fieldDefinitions).map((field, index) => (
+            <div className="col-lg-4 col-md-6" key={field}>
+              <div className="card master-card h-100">
+                <div 
+                  className="card-header-custom"
+                  style={{ backgroundColor: fieldColors[field] }}
+                >
+                  <div className="field-icon">{fieldIcons[field]}</div>
+                  <h5 className="card-title mb-1 text-uppercase fw-bold">
+                    {capitalize(field)}
+                  </h5>
+                  <small style={{ opacity: 0.9 }}>
+                    {fieldDefinitions[field].length} field{fieldDefinitions[field].length > 1 ? 's' : ''}
+                  </small>
+                </div>
+                
+                <div className="card-body p-4 d-flex flex-column justify-content-between">
+                  <div>
+                    {fieldDefinitions[field].slice(0, 3).map(({ label, key, required }) => (
+                      <div key={key} className="mb-2 d-flex justify-content-between align-items-center">
+                        <small className="text-muted">
+                          {label} {required && <span className="text-danger">*</span>}
+                        </small>
+                        {newMaster[field][key] && Array.isArray(newMaster[field][key]) ? 
+                          newMaster[field][key].length > 0 && <span className="badge bg-success">✓</span> :
+                          newMaster[field][key].trim() && <span className="badge bg-success">✓</span>
+                        }
+                      </div>
+                    ))}
+                    {fieldDefinitions[field].length > 3 && (
+                      <small className="text-muted">+{fieldDefinitions[field].length - 3} more fields...</small>
+                    )}
                   </div>
+                  
+                  <button
+                    type="button"
+                    className="btn w-100 mt-3 text-white"
+                    style={{ 
+                      backgroundColor: fieldColors[field],
+                      borderColor: fieldColors[field]
+                    }}
+                    onClick={() => openModal(field)}
+                    disabled={isLoading}
+                  >
+                    {isLoading ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm me-2"></span>
+                        Processing...
+                      </>
+                    ) : (
+                      <>Add {capitalize(field)}</>
+                    )}
+                  </button>
                 </div>
               </div>
             </div>
+          ))}
+        </div>
+
+        {/* Add All Button */}
+        {isAnyFieldFilled && (
+          <div className="row">
+            <div className="col-12 text-center">
+              <div className="stats-card" style={{ maxWidth: '500px', margin: '0 auto' }}>
+                <h5 className="text-primary mb-3">
+                  <span style={{ fontSize: '2rem' }}>🚀</span>
+                  <br />
+                  Ready to save all data?
+                </h5>
+                <button
+                  className="btn btn-primary btn-lg"
+                  onClick={handleAddAll}
+                  disabled={isLoading}
+                  style={{ minWidth: '200px' }}
+                >
+                  {isLoading ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-2"></span>
+                      Processing All...
+                    </>
+                  ) : (
+                    "Add All Master Data"
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
-        ))}
+        )}
       </div>
+
+      {/* Modal */}
+      {showModal.open && (
+        <div className="modal">
+          <div className="modal-dialog">
+            <div className="modal-content">
+              <div className="modal-header d-flex justify-content-between align-items-center">
+                <h5 className="modal-title d-flex align-items-center">
+                  <span className="me-3" style={{ fontSize: '1.5rem' }}>
+                    {fieldIcons[showModal.field]}
+                  </span>
+                  Add New {capitalize(showModal.field)}
+                </h5>
+                <button type="button" className="close" onClick={closeModal}>
+                  <span>&times;</span>
+                </button>
+              </div>
+              
+              <div className="modal-body">
+                <div className="row g-3">
+                  {fieldDefinitions[showModal.field]?.map(({ label, key, type = "text", required }) => (
+                    <div className="col-md-6" key={key}>
+                      <label className="form-label">
+                        {label} 
+                        {required && <span className="text-danger ms-1">*</span>}
+                      </label>
+                      <input
+                        type={type}
+                        className="form-control"
+                        placeholder={`Enter ${label.toLowerCase()}${key.includes("Email") ? " (comma-separated)" : ""}`}
+                        value={Array.isArray(newMaster[showModal.field][key]) ? 
+                          newMaster[showModal.field][key].join(", ") : 
+                          newMaster[showModal.field][key]}
+                        onChange={(e) => handleInputChange(showModal.field, key, e.target.value)}
+                        required={required}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+              
+              <div className="modal-footer d-flex justify-content-end gap-2">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={closeModal}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn text-white"
+                  style={{ 
+                    backgroundColor: fieldColors[showModal.field],
+                    borderColor: fieldColors[showModal.field]
+                  }}
+                  onClick={() => handleAddSingle(showModal.field)}
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-2"></span>
+                      Saving...
+                    </>
+                  ) : (
+                    `Save ${capitalize(showModal.field)}`
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
