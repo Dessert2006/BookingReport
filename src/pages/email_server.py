@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}})  # Allow React app
+CORS(app, resources={r"/api/*": {"origins": ["http://localhost:3000", "https://booking-report.vercel.app"]}})  # Allow React app
 
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
