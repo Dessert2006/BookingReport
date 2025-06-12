@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { db } from "../firebase";
 import { collection, getDocs, doc, updateDoc, getDoc, addDoc, deleteDoc, query, where } from "firebase/firestore";
 import { DataGrid } from "@mui/x-data-grid";
@@ -8,7 +8,7 @@ import { toast } from "react-toastify";
 import * as XLSX from "xlsx";
 import axios from 'axios';
 
-// CSS for highlighting rows and buttons
+// Clean CSS for single grid
 const styles = `
   .highlight-row {
     background-color: #FFFF00;
@@ -56,98 +56,13 @@ const styles = `
     box-shadow: 0 3px 6px rgba(0,0,0,0.2);
   }
   
-  /* Improved overlapped grid layout */
-  .grid-container {
-    position: relative;
+  /* Single grid container */
+  .single-grid-container {
     height: 600px;
+    width: 100%;
     border: 1px solid #e0e0e0;
     border-radius: 8px;
     overflow: hidden;
-    display: flex;
-  }
-  
-  .pinned-grid {
-    position: relative;
-    width: 530px;
-    height: 100%;
-    z-index: 10;
-    overflow: hidden !important;
-    border-right: 2px solid #1976d2;
-  }
-  
-  .scrollable-grid {
-    position: relative;
-    flex: 1;
-    height: 100%;
-    z-index: 5;
-    overflow: hidden !important;
-    margin-left: -1px; /* Remove gap between grids */
-  }
-  
-  .pinned-grid .MuiDataGrid-columnHeaders {
-    background-color: #e3f2fd !important;
-  }
-  
-  .pinned-grid .MuiDataGrid-cell {
-    background-color: #f8f9fa !important;
-    font-weight: 500;
-  }
-  
-  .pinned-grid .MuiDataGrid-columnHeader {
-    background-color: #e3f2fd !important;
-    font-weight: 600;
-  }
-  
-  /* Completely hide scrollbars for pinned grid */
-  .pinned-grid .MuiDataGrid-virtualScroller {
-    overflow: hidden !important;
-    scrollbar-width: none !important;
-    -ms-overflow-style: none !important;
-  }
-  
-  .pinned-grid .MuiDataGrid-virtualScroller::-webkit-scrollbar {
-    display: none !important;
-    width: 0 !important;
-    height: 0 !important;
-  }
-  
-  .pinned-grid .MuiDataGrid-main {
-    overflow: hidden !important;
-  }
-  
-  .pinned-grid .MuiDataGrid-scrollArea {
-    display: none !important;
-  }
-  
-  /* Scrollable grid settings */
-  .scrollable-grid .MuiDataGrid-virtualScroller {
-    overflow-x: auto !important;
-    overflow-y: auto !important;
-    min-width: 4000px !important;
-  }
-  
-  .pinned-grid .MuiDataGrid-row,
-  .scrollable-grid .MuiDataGrid-row {
-    min-height: 52px !important;
-    max-height: 52px !important;
-  }
-  
-  /* Hide horizontal scrollbar for pinned grid completely */
-  .pinned-grid .MuiDataGrid-scrollArea--left,
-  .pinned-grid .MuiDataGrid-scrollArea--right {
-    display: none !important;
-  }
-  
-  /* Make sure no scrollbars appear in pinned grid */
-  .pinned-grid * {
-    scrollbar-width: none !important;
-    -ms-overflow-style: none !important;
-  }
-  
-  .pinned-grid *::-webkit-scrollbar {
-    display: none !important;
-    width: 0 !important;
-    height: 0 !important;
   }
 `;
 
@@ -207,9 +122,6 @@ function Entries() {
   const [sobDateInput, setSobDateInput] = useState("");
   const [rowForSob, setRowForSob] = useState(null);
 
-  const pinnedGridRef = useRef(null);
-  const scrollableGridRef = useRef(null);
-
   const formatCutOffInput = (value) => {
     if (!value) return "";
     const numericValue = value.replace(/[^0-9]/g, "");
@@ -261,12 +173,6 @@ function Entries() {
 
   const fixConcatenatedData = (value) => {
     if (!value || typeof value !== 'string') return value;
-    
-    const volumePatterns = [
-      /(\d+\s*x\s*\d+['\s]*(?:STD|HC|DV|RF|OT|FR|TK))(\d+\s*x\s*\d+['\s]*(?:STD|HC|DV|RF|OT|TK))/gi,
-      /(CONTAINER|CONU|TEMU|MSKU|TCLU|GESU)(\d+)([A-Z]{4}\d+)/gi,
-      /([A-Z]{4}\d{7})([A-Z]{4}\d{7})/gi
-    ];
     
     let fixed = value;
     
@@ -384,57 +290,6 @@ function Entries() {
     applyFilters();
   }, [entries, searchQuery, selectedLocations, sortModel]);
 
-  // Improved scroll synchronization
-  const handleScrollableScroll = (event) => {
-    if (pinnedGridRef.current && scrollableGridRef.current) {
-      const scrollableScroller = event.target.closest('.MuiDataGrid-virtualScroller');
-      const pinnedScroller = pinnedGridRef.current.querySelector('.MuiDataGrid-virtualScroller');
-      
-      if (pinnedScroller && scrollableScroller) {
-        // Synchronize vertical scroll only
-        pinnedScroller.scrollTop = scrollableScroller.scrollTop;
-      }
-    }
-  };
-
-  // Add event listener for scroll synchronization
-  useEffect(() => {
-    const scrollableGrid = scrollableGridRef.current;
-    if (scrollableGrid) {
-      const virtualScroller = scrollableGrid.querySelector('.MuiDataGrid-virtualScroller');
-      if (virtualScroller) {
-        virtualScroller.addEventListener('scroll', handleScrollableScroll);
-        return () => {
-          virtualScroller.removeEventListener('scroll', handleScrollableScroll);
-        };
-      }
-    }
-  }, [filteredEntries]);
-
-  const handlePinnedSelectionChange = (newSelection) => {
-    setSelectedRows(newSelection);
-  };
-
-  const handleScrollableSelectionChange = (newSelection) => {
-    setSelectedRows(newSelection);
-  };
-
-  const handlePinnedSortModelChange = (newSortModel) => {
-    setSortModel(newSortModel);
-  };
-
-  const handleScrollableSortModelChange = (newSortModel) => {
-    setSortModel(newSortModel);
-  };
-
-  const handlePinnedFilterModelChange = (newFilterModel) => {
-    setFilterModel(newFilterModel);
-  };
-
-  const handleScrollableFilterModelChange = (newFilterModel) => {
-    setFilterModel(newFilterModel);
-  };
-
   useEffect(() => {
     const fetchEntries = async () => {
       const querySnapshot = await getDocs(collection(db, "entries"));
@@ -456,6 +311,19 @@ function Entries() {
           };
         }
 
+        // Extract containerNo from equipmentDetails if present
+        let containerNo = "";
+        if (Array.isArray(entryData.equipmentDetails)) {
+          containerNo = entryData.equipmentDetails
+            .map(eq => eq.containerNo)
+            .filter(Boolean)
+            .join(', ');
+        } else if (Array.isArray(entryData.containerNo)) {
+          containerNo = entryData.containerNo.join(', ');
+        } else {
+          containerNo = entryData.containerNo || "";
+        }
+
         entryList.push({
           id: docSnap.id,
           ...entryData,
@@ -471,7 +339,7 @@ function Entries() {
           vessel: entryData.vessel?.name || entryData.vessel || "",
           equipmentType: entryData.equipmentType?.type || entryData.equipmentType || "",
           volume: Array.isArray(entryData.volume) ? entryData.volume.join(', ') : entryData.volume || "",
-          containerNo: Array.isArray(entryData.containerNo) ? entryData.containerNo.join(', ') : entryData.containerNo || "",
+          containerNo: containerNo,
           isfSent: entryData.isfSent || false,
           sob: entryData.sob || false,
           sobDate: entryData.sobDate || "",
@@ -519,10 +387,6 @@ function Entries() {
     fetchEntries();
     fetchMasterData();
   }, []);
-
-  const handleSortModelChange = (newSortModel) => {
-    setSortModel(newSortModel);
-  };
 
   const handleQuickSort = (field, direction) => {
     const newSortModel = [{ field, sort: direction }];
@@ -734,8 +598,6 @@ function Entries() {
       field: "customer",
       headerName: "Customer",
       width: 200,
-      minWidth: 200,
-      flex: 0,
       editable: true,
       type: "singleSelect",
       valueOptions: masterData.customer,
@@ -746,8 +608,6 @@ function Entries() {
       field: "line",
       headerName: "Line",
       width: 150,
-      minWidth: 150,
-      flex: 0,
       editable: true,
       type: "singleSelect",
       valueOptions: masterData.line,
@@ -757,8 +617,6 @@ function Entries() {
       field: "bookingNo",
       headerName: "Booking No",
       width: 180,
-      minWidth: 180,
-      flex: 0,
       editable: true,
       renderCell: (params) => params.value || ""
     },
@@ -766,8 +624,6 @@ function Entries() {
       field: "location",
       headerName: "Location",
       width: 150,
-      minWidth: 150,
-      flex: 0,
       editable: true,
       type: "singleSelect",
       valueOptions: masterData.location,
@@ -782,8 +638,6 @@ function Entries() {
         field: key,
         headerName: entryFields[key],
         width: 180,
-        minWidth: 180,
-        flex: 0,
         editable: key !== "salesPersonName",
         ...(isMasterField && {
           type: "singleSelect",
@@ -911,8 +765,6 @@ function Entries() {
       field: "finalDG",
       headerName: "FINAL DG",
       width: 180,
-      minWidth: 180,
-      flex: 0,
       editable: true,
       renderCell: (params) => {
         const volume = params.row.volume || "";
@@ -939,8 +791,6 @@ function Entries() {
       field: "isfSent",
       headerName: "ISF SENT",
       width: 180,
-      minWidth: 180,
-      flex: 0,
       editable: true,
       renderCell: (params) => {
         const entryFpod = params.row.fpod || "";
@@ -971,8 +821,6 @@ function Entries() {
       field: "sob",
       headerName: "SOB",
       width: 180,
-      minWidth: 180,
-      flex: 0,
       editable: true,
       renderCell: (params) => (
         <Checkbox
@@ -989,8 +837,6 @@ function Entries() {
     field: "blNo",
     headerName: "BL No",
     width: 200,
-    minWidth: 200,
-    flex: 0,
     editable: true
   });
 
@@ -998,8 +844,6 @@ function Entries() {
     field: "actions",
     headerName: "Actions",
     width: 100,
-    minWidth: 100,
-    flex: 0,
     renderCell: (params) => (
       <IconButton
         color="error"
@@ -1087,7 +931,7 @@ function Entries() {
           bl_no: newRow.blNo || ''
         };
 
-        console.log("Sending emailData:", emailData); // Debug log
+        console.log("Sending emailData:", emailData);
         await axios.post('http://localhost:5000/api/send-sob-email', emailData);
         toast.success("SOB email sent successfully!");
       } else {
@@ -1320,177 +1164,72 @@ function Entries() {
         </div>
       )}
 
-      <div className="grid-container">
-        <div className="pinned-grid">
-          <DataGrid
-            ref={pinnedGridRef}
-            rows={filteredEntries}
-            columns={allColumns.slice(0, activeLocationFilter === "SEE ALL" ? 4 : 3)}
-            pageSize={10}
-            rowsPerPageOptions={[5, 10, 20]}
-            checkboxSelection
-            disableSelectionOnClick
-            hideFooter
-            getRowClassName={getRowClassName}
-            selectionModel={selectedRows}
-            onSelectionModelChange={handlePinnedSelectionChange}
-            processRowUpdate={handleProcessRowUpdate}
-            sortModel={sortModel}
-            onSortModelChange={handlePinnedSortModelChange}
-            filterModel={filterModel}
-            onFilterModelChange={handlePinnedFilterModelChange}
-            disableColumnMenu={false}
-            disableVirtualization={false}
-            sx={{
-              height: '100%',
-              width: '100%',
-              border: 'none',
-              borderRight: '2px solid #1976d2',
-              '& .MuiDataGrid-columnHeaders': {
+      <div className="single-grid-container">
+        <DataGrid
+          rows={filteredEntries}
+          columns={allColumns}
+          pageSize={10}
+          rowsPerPageOptions={[5, 10, 20, 50]}
+          checkboxSelection
+          disableSelectionOnClick
+          getRowClassName={getRowClassName}
+          selectionModel={selectedRows}
+          onSelectionModelChange={setSelectedRows}
+          processRowUpdate={handleProcessRowUpdate}
+          sortModel={sortModel}
+          onSortModelChange={setSortModel}
+          filterModel={filterModel}
+          onFilterModelChange={setFilterModel}
+          disableColumnMenu={false}
+          rowHeight={52}
+          autoHeight={false}
+          sx={{
+            height: '100%',
+            width: '100%',
+            border: 'none',
+            '& .MuiDataGrid-columnHeaders': {
+              backgroundColor: '#f8f9fa',
+              fontWeight: 'bold',
+              fontSize: '14px',
+              borderBottom: '2px solid #e0e0e0',
+            },
+            '& .MuiDataGrid-columnHeader': {
+              padding: '8px 4px',
+              '&:focus': {
+                outline: 'none',
+              },
+              '&:hover': {
                 backgroundColor: '#e3f2fd',
-                fontWeight: 'bold',
-                fontSize: '14px',
-                borderBottom: '2px solid #e0e0e0',
               },
-              '& .MuiDataGrid-columnHeader': {
-                padding: '8px 4px',
-                '&:focus': {
-                  outline: 'none',
-                },
-                '&:hover': {
-                  backgroundColor: '#d1e7fd',
-                },
+            },
+            '& .MuiDataGrid-cell': {
+              borderRight: '1px solid #f0f0f0',
+              fontSize: '13px',
+              '&:focus': {
+                outline: 'none',
               },
-              '& .MuiDataGrid-cell': {
-                borderRight: '1px solid #f0f0f0',
-                fontSize: '13px',
-                backgroundColor: '#f8f9fa',
-                fontWeight: '500',
-                '&:focus': {
-                  outline: 'none',
-                },
-              },
-              '& .MuiDataGrid-row:nth-of-type(even) .MuiDataGrid-cell': {
-                backgroundColor: '#f0f0f0',
-              },
-              '& .MuiDataGrid-row:hover .MuiDataGrid-cell': {
-                backgroundColor: '#e8f4fd !important',
-              },
-              '& .MuiDataGrid-row.Mui-selected .MuiDataGrid-cell': {
-                backgroundColor: '#bbdefb !important',
-              },
-              '& .MuiDataGrid-virtualScroller': {
-                overflow: 'hidden !important',
-                scrollbarWidth: 'none !important',
-                '-ms-overflow-style': 'none !important',
-              },
-              '& .MuiDataGrid-virtualScroller::-webkit-scrollbar': {
-                display: 'none !important',
-                width: '0 !important',
-                height: '0 !important',
-              },
-              '& .MuiDataGrid-main': {
-                overflow: 'hidden !important',
-              },
-              '& .MuiDataGrid-scrollArea': {
-                display: 'none !important',
-              },
-              '& .MuiDataGrid-scrollArea--left': {
-                display: 'none !important',
-              },
-              '& .MuiDataGrid-scrollArea--right': {
-                display: 'none !important',
-              },
-              '& .MuiDataGrid-columnSeparator': {
-                display: 'none',
-              },
-            }}
-          />
-        </div>
-
-        <div className="scrollable-grid">
-          <DataGrid
-            ref={scrollableGridRef}
-            rows={filteredEntries}
-            columns={allColumns}
-            pageSize={10}
-            rowsPerPageOptions={[5, 10, 20]}
-            disableSelectionOnClick
-            hideFooter
-            getRowClassName={getRowClassName}
-            selectionModel={selectedRows}
-            onSelectionModelChange={handleScrollableSelectionChange}
-            processRowUpdate={handleProcessRowUpdate}
-            sortModel={sortModel}
-            onSortModelChange={handleScrollableSortModelChange}
-            filterModel={filterModel}
-            onFilterModelChange={handleScrollableFilterModelChange}
-            disableColumnMenu={false}
-            sx={{
-              height: '100%',
-              minWidth: '4000px',
-              border: 'none',
-              borderLeft: 'none',
-              '& .MuiDataGrid-columnHeaders': {
-                backgroundColor: '#f8f9fa',
-                fontWeight: 'bold',
-                fontSize: '14px',
-                borderBottom: '2px solid #e0e0e0',
-              },
-              '& .MuiDataGrid-columnHeader': {
-                padding: '8px 4px',
-                '&:focus': {
-                  outline: 'none',
-                },
-                '&:hover': {
-                  backgroundColor: '#e3f2fd',
-                },
-              },
-              '& .MuiDataGrid-cell': {
-                borderRight: '1px solid #f0f0f0',
-                fontSize: '13px',
-                '&:focus': {
-                  outline: 'none',
-                },
-              },
-              '& .MuiDataGrid-row:nth-of-type(even)': {
-                backgroundColor: '#fafafa',
-              },
-              '& .MuiDataGrid-row:hover': {
-                backgroundColor: '#f0f8ff !important',
-              },
-              '& .MuiDataGrid-row.Mui-selected': {
-                backgroundColor: '#e3f2fd !important',
-              },
-              '& .MuiDataGrid-row.Mui-selected:hover': {
-                backgroundColor: '#bbdefb !important',
-              },
-              '& .MuiDataGrid-virtualScroller': {
-                overflowX: 'auto !important',
-                overflowY: 'auto !important',
-              },
-              '& .MuiDataGrid-columnSeparator': {
-                display: 'none',
-              },
-              // FIXED: Hide duplicate columns properly
-              ...(activeLocationFilter === "SEE ALL" ? {
-                '& .MuiDataGrid-columnHeader:nth-child(-n+4)': {
-                  display: 'none',
-                },
-                '& .MuiDataGrid-cell:nth-child(-n+4)': {
-                  display: 'none',
-                },
-              } : {
-                '& .MuiDataGrid-columnHeader:nth-child(-n+3)': {
-                  display: 'none',
-                },
-                '& .MuiDataGrid-cell:nth-child(-n+3)': {
-                  display: 'none',
-                },
-              }),
-            }}
-          />
-        </div>
+            },
+            '& .MuiDataGrid-row:nth-of-type(even)': {
+              backgroundColor: '#fafafa',
+            },
+            '& .MuiDataGrid-row:hover': {
+              backgroundColor: '#f0f8ff !important',
+            },
+            '& .MuiDataGrid-row.Mui-selected': {
+              backgroundColor: '#e3f2fd !important',
+            },
+            '& .MuiDataGrid-row.Mui-selected:hover': {
+              backgroundColor: '#bbdefb !important',
+            },
+            '& .MuiDataGrid-columnSeparator': {
+              display: 'none',
+            },
+            '& .MuiDataGrid-virtualScroller': {
+              overflowX: 'auto',
+              overflowY: 'auto',
+            },
+          }}
+        />
       </div>
 
       <Dialog open={openDialog} onClose={handleDialogClose}>
