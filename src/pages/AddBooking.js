@@ -325,11 +325,19 @@ function AddBooking() {
           }
         }
 
-        const finalVolume = newEntry.equipmentDetails
+        // Ensure each equipment detail has containerNo (default to empty string if missing)
+        const equipmentDetailsWithContainerNo = newEntry.equipmentDetails.map(detail => ({
+          equipmentType: detail.equipmentType,
+          qty: detail.qty,
+          containerNo: detail.containerNo !== undefined ? detail.containerNo : ""
+        }));
+
+        const finalVolume = equipmentDetailsWithContainerNo
           .map(detail => `${detail.qty} x ${detail.equipmentType}`)
           .join(", ");
         const entryData = { 
           ...newEntry, 
+          equipmentDetails: equipmentDetailsWithContainerNo, // <-- ensure containerNo is included
           volume: finalVolume,
           vgmFiled: false,
           siFiled: false,

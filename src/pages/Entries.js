@@ -6,6 +6,7 @@ import { TextField, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle,
 import DeleteIcon from '@mui/icons-material/Delete';
 import { toast } from "react-toastify";
 import * as XLSX from "xlsx";
+import axios from 'axios';
 
 // CSS for highlighting rows and buttons
 const styles = `
@@ -55,37 +56,34 @@ const styles = `
     box-shadow: 0 3px 6px rgba(0,0,0,0.2);
   }
   
-  /* Overlapped grid layout */
+  /* Improved overlapped grid layout */
   .grid-container {
     position: relative;
     height: 600px;
     border: 1px solid #e0e0e0;
     border-radius: 8px;
     overflow: hidden;
+    display: flex;
   }
   
   .pinned-grid {
-    position: absolute;
-    top: 0;
-    left: 0;
+    position: relative;
     width: 530px;
     height: 100%;
     z-index: 10;
-    overflow: hidden;
-    /* Hide everything except the first 3 columns */
-    clip-path: inset(0 calc(100% - 530px) 0 0);
+    overflow: hidden !important;
+    border-right: 2px solid #1976d2;
   }
   
   .scrollable-grid {
-    position: absolute;
-    top: 0;
-    left: 530px;
-    width: calc(100% - 530px);
+    position: relative;
+    flex: 1;
     height: 100%;
     z-index: 5;
+    overflow: hidden !important;
+    margin-left: -1px; /* Remove gap between grids */
   }
   
-  /* Pinned grid styling */
   .pinned-grid .MuiDataGrid-columnHeaders {
     background-color: #e3f2fd !important;
   }
@@ -100,21 +98,56 @@ const styles = `
     font-weight: 600;
   }
   
-  /* Hide horizontal scrollbar for pinned grid */
+  /* Completely hide scrollbars for pinned grid */
   .pinned-grid .MuiDataGrid-virtualScroller {
-    overflow-x: hidden !important;
+    overflow: hidden !important;
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
   }
   
-  /* Ensure the scrollable grid shows content starting after pinned columns */
+  .pinned-grid .MuiDataGrid-virtualScroller::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
+  
+  .pinned-grid .MuiDataGrid-main {
+    overflow: hidden !important;
+  }
+  
+  .pinned-grid .MuiDataGrid-scrollArea {
+    display: none !important;
+  }
+  
+  /* Scrollable grid settings */
   .scrollable-grid .MuiDataGrid-virtualScroller {
     overflow-x: auto !important;
+    overflow-y: auto !important;
+    min-width: 4000px !important;
   }
   
-  /* Synchronize row heights */
   .pinned-grid .MuiDataGrid-row,
   .scrollable-grid .MuiDataGrid-row {
     min-height: 52px !important;
     max-height: 52px !important;
+  }
+  
+  /* Hide horizontal scrollbar for pinned grid completely */
+  .pinned-grid .MuiDataGrid-scrollArea--left,
+  .pinned-grid .MuiDataGrid-scrollArea--right {
+    display: none !important;
+  }
+  
+  /* Make sure no scrollbars appear in pinned grid */
+  .pinned-grid * {
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+  }
+  
+  .pinned-grid *::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
   }
 `;
 
@@ -174,7 +207,6 @@ function Entries() {
   const [sobDateInput, setSobDateInput] = useState("");
   const [rowForSob, setRowForSob] = useState(null);
 
-  // Refs for both grids to synchronize scrolling
   const pinnedGridRef = useRef(null);
   const scrollableGridRef = useRef(null);
 
@@ -227,11 +259,9 @@ function Entries() {
     return null;
   };
 
-  // Function to detect and fix concatenated volume/container data
   const fixConcatenatedData = (value) => {
     if (!value || typeof value !== 'string') return value;
     
-    // Common patterns that indicate concatenated data
     const volumePatterns = [
       /(\d+\s*x\s*\d+['\s]*(?:STD|HC|DV|RF|OT|FR|TK))(\d+\s*x\s*\d+['\s]*(?:STD|HC|DV|RF|OT|TK))/gi,
       /(CONTAINER|CONU|TEMU|MSKU|TCLU|GESU)(\d+)([A-Z]{4}\d+)/gi,
@@ -240,13 +270,10 @@ function Entries() {
     
     let fixed = value;
     
-    // Fix volume patterns like "1 x 20 STD1 x 40'HC"
     fixed = fixed.replace(/(\d+\s*x\s*\d+['\s]*(?:STD|HC|DV|RF|OT|TK|GP))(?=\d+\s*x\s*\d+)/gi, '$1, ');
     
-    // Fix container patterns like "CONTAINER123CONTAINER456"
     fixed = fixed.replace(/([A-Z]{4}\d{6,7})(?=[A-Z]{4}\d{6,7})/gi, '$1, ');
     
-    // Fix patterns like "CONU1234567TEMU8901234"
     fixed = fixed.replace(/((?:CONTAINER|CONU|TEMU|MSKU|TCLU|GESU)\d+)(?=(?:CONTAINER|CONU|TEMU|MSKU|TCLU|GESU))/gi, '$1, ');
     
     return fixed;
@@ -302,11 +329,9 @@ function Entries() {
     });
   };
 
-  // Apply filters and sorting
   const applyFilters = () => {
     let filtered = [...entries];
 
-    // Apply search filter
     if (searchQuery) {
       const tokens = parseAdvancedQuery(searchQuery);
       filtered = filtered.filter((entry) => {
@@ -346,42 +371,46 @@ function Entries() {
       });
     }
 
-    // Apply location filter
     if (selectedLocations.length > 0) {
       filtered = filtered.filter((entry) => selectedLocations.includes(entry.location));
     }
 
-    // Apply sorting
     filtered = applySorting(filtered, sortModel);
 
     setFilteredEntries(filtered);
   };
 
-  // Effect to reapply filters when dependencies change
   useEffect(() => {
     applyFilters();
   }, [entries, searchQuery, selectedLocations, sortModel]);
 
-  // Synchronize vertical scrolling between grids
-  const handlePinnedScroll = (event) => {
-    if (scrollableGridRef.current) {
-      const scrollableGrid = scrollableGridRef.current.querySelector('.MuiDataGrid-virtualScroller');
-      if (scrollableGrid) {
-        scrollableGrid.scrollTop = event.target.scrollTop;
-      }
-    }
-  };
-
+  // Improved scroll synchronization
   const handleScrollableScroll = (event) => {
-    if (pinnedGridRef.current) {
-      const pinnedGrid = pinnedGridRef.current.querySelector('.MuiDataGrid-virtualScroller');
-      if (pinnedGrid) {
-        pinnedGrid.scrollTop = event.target.scrollTop;
+    if (pinnedGridRef.current && scrollableGridRef.current) {
+      const scrollableScroller = event.target.closest('.MuiDataGrid-virtualScroller');
+      const pinnedScroller = pinnedGridRef.current.querySelector('.MuiDataGrid-virtualScroller');
+      
+      if (pinnedScroller && scrollableScroller) {
+        // Synchronize vertical scroll only
+        pinnedScroller.scrollTop = scrollableScroller.scrollTop;
       }
     }
   };
 
-  // Synchronize selection between grids
+  // Add event listener for scroll synchronization
+  useEffect(() => {
+    const scrollableGrid = scrollableGridRef.current;
+    if (scrollableGrid) {
+      const virtualScroller = scrollableGrid.querySelector('.MuiDataGrid-virtualScroller');
+      if (virtualScroller) {
+        virtualScroller.addEventListener('scroll', handleScrollableScroll);
+        return () => {
+          virtualScroller.removeEventListener('scroll', handleScrollableScroll);
+        };
+      }
+    }
+  }, [filteredEntries]);
+
   const handlePinnedSelectionChange = (newSelection) => {
     setSelectedRows(newSelection);
   };
@@ -390,7 +419,6 @@ function Entries() {
     setSelectedRows(newSelection);
   };
 
-  // Handle sort model changes from either grid
   const handlePinnedSortModelChange = (newSortModel) => {
     setSortModel(newSortModel);
   };
@@ -399,7 +427,6 @@ function Entries() {
     setSortModel(newSortModel);
   };
 
-  // Handle filter model changes from either grid
   const handlePinnedFilterModelChange = (newFilterModel) => {
     setFilterModel(newFilterModel);
   };
@@ -421,7 +448,12 @@ function Entries() {
         const entryData = { ...docSnap.data(), id: docSnap.id };
         let customerObj = entryData.customer;
         if (typeof customerObj === 'string') {
-          customerObj = customerMasterList.find(item => item.name === customerObj) || { name: customerObj, salesPerson: "" };
+          customerObj = customerMasterList.find(item => item.name === customerObj) || { 
+            name: customerObj, 
+            salesPerson: "", 
+            customerEmail: "", 
+            salesPersonEmail: ""
+          };
         }
 
         entryList.push({
@@ -430,13 +462,14 @@ function Entries() {
           location: entryData.location?.name || entryData.location || "",
           customer: customerObj,
           salesPersonName: customerObj?.salesPerson || "",
+          customerEmail: customerObj?.customerEmail || "",
+          salesPersonEmail: customerObj?.salesPersonEmail || "",
           line: entryData.line?.name || entryData.line || "",
           pol: entryData.pol?.name || entryData.pol || "",
           pod: entryData.pod?.name || entryData.pod || "",
           fpod: entryData.fpod?.name || entryData.fpod || "",
           vessel: entryData.vessel?.name || entryData.vessel || "",
           equipmentType: entryData.equipmentType?.type || entryData.equipmentType || "",
-          // Add separators for volume and container numbers
           volume: Array.isArray(entryData.volume) ? entryData.volume.join(', ') : entryData.volume || "",
           containerNo: Array.isArray(entryData.containerNo) ? entryData.containerNo.join(', ') : entryData.containerNo || "",
           isfSent: entryData.isfSent || false,
@@ -487,7 +520,6 @@ function Entries() {
     fetchMasterData();
   }, []);
 
-  // Sort handlers
   const handleSortModelChange = (newSortModel) => {
     setSortModel(newSortModel);
   };
@@ -501,7 +533,6 @@ function Entries() {
     setSortModel([]);
   };
 
-  // Location filter handlers
   const handleLocationButtonFilter = (location) => {
     setActiveLocationFilter(location);
     if (location === "SEE ALL") {
@@ -541,7 +572,11 @@ function Entries() {
       let customerData = newRow.customer;
       if (typeof newRow.customer === 'string') {
         const customerDoc = await getDoc(doc(db, "newMaster", "customer"));
-        customerData = customerDoc.data()?.list.find(item => item.name === newRow.customer) || { name: newRow.customer };
+        customerData = customerDoc.data()?.list.find(item => item.name === newRow.customer) || { 
+          name: newRow.customer,
+          customerEmail: "",
+          salesPersonEmail: ""
+        };
       }
 
       const formattedRow = {
@@ -550,7 +585,8 @@ function Entries() {
         siCutOff: formattedSiCutOff,
         customer: customerData,
         salesPersonName: customerData.salesPerson || "",
-        // Format volume and containerNo with separators when saving
+        customerEmail: customerData.customerEmail || "",
+        salesPersonEmail: customerData.salesPersonEmail || "",
         volume: fixConcatenatedData(typeof newRow.volume === 'string' && newRow.volume.includes(',') ? 
                 newRow.volume.split(',').map(v => v.trim()).join(', ') : newRow.volume),
         containerNo: fixConcatenatedData(typeof newRow.containerNo === 'string' && newRow.containerNo.includes(',') ? 
@@ -601,6 +637,8 @@ function Entries() {
         const updateData = { ...formattedRow };
         delete updateData.id;
         delete updateData.salesPersonName;
+        delete updateData.customerEmail;
+        delete updateData.salesPersonEmail;
         batchUpdates.push(updateDoc(docRef, updateData));
 
         await Promise.all(batchUpdates);
@@ -617,6 +655,8 @@ function Entries() {
         const updateData = { ...formattedRow };
         delete updateData.id;
         delete updateData.salesPersonName;
+        delete updateData.customerEmail;
+        delete updateData.salesPersonEmail;
         await updateDoc(docRef, updateData);
         toast.success("Row updated successfully!");
       }
@@ -636,7 +676,6 @@ function Entries() {
 
     const exportData = rowsToExport.map(entry => {
       const row = {};
-      // Include all columns for export
       allColumns.forEach(column => {
         if (column.field !== 'actions') {
           let value = entry[column.field];
@@ -690,12 +729,13 @@ function Entries() {
     "equipmentType"
   ];
 
-  // All columns for both grids (they'll show the same data but be clipped differently)
   const allColumns = [
     {
       field: "customer",
       headerName: "Customer",
       width: 200,
+      minWidth: 200,
+      flex: 0,
       editable: true,
       type: "singleSelect",
       valueOptions: masterData.customer,
@@ -706,6 +746,8 @@ function Entries() {
       field: "line",
       headerName: "Line",
       width: 150,
+      minWidth: 150,
+      flex: 0,
       editable: true,
       type: "singleSelect",
       valueOptions: masterData.line,
@@ -715,6 +757,8 @@ function Entries() {
       field: "bookingNo",
       headerName: "Booking No",
       width: 180,
+      minWidth: 180,
+      flex: 0,
       editable: true,
       renderCell: (params) => params.value || ""
     },
@@ -722,6 +766,8 @@ function Entries() {
       field: "location",
       headerName: "Location",
       width: 150,
+      minWidth: 150,
+      flex: 0,
       editable: true,
       type: "singleSelect",
       valueOptions: masterData.location,
@@ -735,7 +781,9 @@ function Entries() {
       return {
         field: key,
         headerName: entryFields[key],
-        width: 150,
+        width: 180,
+        minWidth: 180,
+        flex: 0,
         editable: key !== "salesPersonName",
         ...(isMasterField && {
           type: "singleSelect",
@@ -844,10 +892,8 @@ function Entries() {
           if (key === "salesPersonName") {
             return params.row.customer?.salesPerson || "";
           }
-          // Add proper formatting for volume and containerNo display
           if (key === "volume" || key === "containerNo") {
             const value = params.value || "";
-            // If it's a string with multiple values, ensure proper comma separation
             if (typeof value === 'string' && value.includes(',')) {
               return value.split(',').map(v => v.trim()).join(', ');
             }
@@ -859,13 +905,14 @@ function Entries() {
     })
   ];
 
-  // Add conditional columns
   const siFiledIndex = allColumns.findIndex((col) => col.field === "siFiled");
   if (siFiledIndex !== -1) {
     allColumns.splice(siFiledIndex + 1, 0, {
       field: "finalDG",
       headerName: "FINAL DG",
-      width: 150,
+      width: 180,
+      minWidth: 180,
+      flex: 0,
       editable: true,
       renderCell: (params) => {
         const volume = params.row.volume || "";
@@ -891,7 +938,9 @@ function Entries() {
     allColumns.splice(firstPrintedIndex + 1, 0, {
       field: "isfSent",
       headerName: "ISF SENT",
-      width: 150,
+      width: 180,
+      minWidth: 180,
+      flex: 0,
       editable: true,
       renderCell: (params) => {
         const entryFpod = params.row.fpod || "";
@@ -921,7 +970,9 @@ function Entries() {
     allColumns.splice(firstPrintedIndex + 2, 0, {
       field: "sob",
       headerName: "SOB",
-      width: 150,
+      width: 180,
+      minWidth: 180,
+      flex: 0,
       editable: true,
       renderCell: (params) => (
         <Checkbox
@@ -938,6 +989,8 @@ function Entries() {
     field: "blNo",
     headerName: "BL No",
     width: 200,
+    minWidth: 200,
+    flex: 0,
     editable: true
   });
 
@@ -945,6 +998,8 @@ function Entries() {
     field: "actions",
     headerName: "Actions",
     width: 100,
+    minWidth: 100,
+    flex: 0,
     renderCell: (params) => (
       <IconButton
         color="error"
@@ -1004,10 +1059,48 @@ function Entries() {
 
     const formattedSobDate = formatDate(sobDateInput);
     const newRow = { ...rowForSob, sob: true, sobDate: formattedSobDate };
-    await handleProcessRowUpdate(newRow, rowForSob);
-    setSobDialogOpen(false);
-    setRowForSob(null);
-    setSobDateInput("");
+
+    try {
+      // Update Firestore
+      await handleProcessRowUpdate(newRow, rowForSob);
+
+      // Send email via Python API
+      if (newRow.customerEmail && newRow.salesPersonEmail) {
+        // Ensure container_no is a string
+        const containerNo = Array.isArray(newRow.containerNo) 
+          ? newRow.containerNo.join(', ') 
+          : newRow.containerNo || '';
+
+        const emailData = {
+          customer_email: newRow.customerEmail,
+          sales_person_email: newRow.salesPersonEmail,
+          customer_name: newRow.customer?.name || newRow.customer,
+          booking_no: newRow.bookingNo,
+          sob_date: formattedSobDate,
+          vessel: newRow.vessel,
+          voyage: newRow.voyage,
+          pol: newRow.pol,
+          pod: newRow.pod,
+          fpod: newRow.fpod || '',
+          container_no: containerNo,
+          volume: newRow.volume,
+          bl_no: newRow.blNo || ''
+        };
+
+        console.log("Sending emailData:", emailData); // Debug log
+        await axios.post('http://localhost:5000/api/send-sob-email', emailData);
+        toast.success("SOB email sent successfully!");
+      } else {
+        toast.warn("Email addresses missing for customer or salesperson.");
+      }
+
+      setSobDialogOpen(false);
+      setRowForSob(null);
+      setSobDateInput("");
+    } catch (error) {
+      console.error("Error processing SOB: ", error);
+      toast.error("Failed to process SOB or send email.");
+    }
   };
 
   const handleSobCancel = () => {
@@ -1063,6 +1156,8 @@ function Entries() {
       const entryData = { ...updatedRow };
       delete entryData.id;
       delete entryData.salesPersonName;
+      delete entryData.customerEmail;
+      delete entryData.salesPersonEmail;
       await addDoc(collection(db, "completedFiles"), entryData);
       await deleteDoc(doc(db, "entries", updatedRow.id));
 
@@ -1122,7 +1217,6 @@ function Entries() {
       <style>{styles}</style>
       <h2 className="mb-4 text-center">Booking Entries</h2>
 
-      {/* Location Filter Buttons */}
       <Box sx={{ mb: 3, display: 'flex', justifyContent: 'center', gap: 1 }}>
         {["MUMBAI", "GUJARAT", "SEE ALL"].map((location) => (
           <button
@@ -1135,7 +1229,6 @@ function Entries() {
         ))}
       </Box>
 
-      {/* Quick Sort Buttons */}
       <Box sx={{ mb: 3, display: 'flex', justifyContent: 'center', gap: 2, flexWrap: 'wrap' }}>
         <button
           className="sort-button"
@@ -1227,14 +1320,12 @@ function Entries() {
         </div>
       )}
 
-      {/* Overlapped Grid Layout with Pinned and Scrollable Columns */}
       <div className="grid-container">
-        {/* Pinned Grid (Customer, Line, Booking No) - Shows only first 3 columns */}
         <div className="pinned-grid">
           <DataGrid
             ref={pinnedGridRef}
             rows={filteredEntries}
-            columns={allColumns}
+            columns={allColumns.slice(0, activeLocationFilter === "SEE ALL" ? 4 : 3)}
             pageSize={10}
             rowsPerPageOptions={[5, 10, 20]}
             checkboxSelection
@@ -1249,10 +1340,12 @@ function Entries() {
             filterModel={filterModel}
             onFilterModelChange={handlePinnedFilterModelChange}
             disableColumnMenu={false}
+            disableVirtualization={false}
             sx={{
               height: '100%',
               width: '100%',
               border: 'none',
+              borderRight: '2px solid #1976d2',
               '& .MuiDataGrid-columnHeaders': {
                 backgroundColor: '#e3f2fd',
                 fontWeight: 'bold',
@@ -1287,18 +1380,34 @@ function Entries() {
                 backgroundColor: '#bbdefb !important',
               },
               '& .MuiDataGrid-virtualScroller': {
-                overflowX: 'hidden',
-                overflowY: 'auto',
+                overflow: 'hidden !important',
+                scrollbarWidth: 'none !important',
+                '-ms-overflow-style': 'none !important',
+              },
+              '& .MuiDataGrid-virtualScroller::-webkit-scrollbar': {
+                display: 'none !important',
+                width: '0 !important',
+                height: '0 !important',
+              },
+              '& .MuiDataGrid-main': {
+                overflow: 'hidden !important',
+              },
+              '& .MuiDataGrid-scrollArea': {
+                display: 'none !important',
+              },
+              '& .MuiDataGrid-scrollArea--left': {
+                display: 'none !important',
+              },
+              '& .MuiDataGrid-scrollArea--right': {
+                display: 'none !important',
               },
               '& .MuiDataGrid-columnSeparator': {
                 display: 'none',
               },
             }}
-            onScroll={handlePinnedScroll}
           />
         </div>
 
-        {/* Scrollable Grid (All columns) - Positioned to show columns after the pinned ones */}
         <div className="scrollable-grid">
           <DataGrid
             ref={scrollableGridRef}
@@ -1319,8 +1428,9 @@ function Entries() {
             disableColumnMenu={false}
             sx={{
               height: '100%',
-              width: '100%',
+              minWidth: '4000px',
               border: 'none',
+              borderLeft: 'none',
               '& .MuiDataGrid-columnHeaders': {
                 backgroundColor: '#f8f9fa',
                 fontWeight: 'bold',
@@ -1356,14 +1466,29 @@ function Entries() {
                 backgroundColor: '#bbdefb !important',
               },
               '& .MuiDataGrid-virtualScroller': {
-                overflowX: 'auto',
-                overflowY: 'auto',
+                overflowX: 'auto !important',
+                overflowY: 'auto !important',
               },
               '& .MuiDataGrid-columnSeparator': {
                 display: 'none',
               },
+              // FIXED: Hide duplicate columns properly
+              ...(activeLocationFilter === "SEE ALL" ? {
+                '& .MuiDataGrid-columnHeader:nth-child(-n+4)': {
+                  display: 'none',
+                },
+                '& .MuiDataGrid-cell:nth-child(-n+4)': {
+                  display: 'none',
+                },
+              } : {
+                '& .MuiDataGrid-columnHeader:nth-child(-n+3)': {
+                  display: 'none',
+                },
+                '& .MuiDataGrid-cell:nth-child(-n+3)': {
+                  display: 'none',
+                },
+              }),
             }}
-            onScroll={handleScrollableScroll}
           />
         </div>
       </div>
