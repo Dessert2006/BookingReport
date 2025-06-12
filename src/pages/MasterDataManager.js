@@ -308,8 +308,12 @@ function MasterDataManager() {
         
         .data-header {
           padding: 1.5rem 2rem;
-          border-bottom: 1px solid #e9ecef;
+          border-bottom: 2px solid #e9ecef;
           background: #f8f9fa;
+          position: sticky;
+          top: 0;
+          z-index: 10;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
         
         .form-control {
@@ -341,23 +345,59 @@ function MasterDataManager() {
           transform: none;
         }
         
-        .table {
-          margin-bottom: 0;
+        .table-container {
+          max-height: 600px;
+          overflow-y: auto;
+          position: relative;
         }
         
-        .table th {
+        .grid-table {
+          margin-bottom: 0;
+          border-collapse: separate;
+          border-spacing: 0;
+        }
+        
+        .grid-table th {
           background-color: #f8f9fa;
-          border-top: none;
+          border: 1px solid #dee2e6;
+          border-bottom: 2px solid #adb5bd;
           color: #495057;
           font-weight: 600;
           text-transform: uppercase;
           font-size: 0.8rem;
           letter-spacing: 0.5px;
+          padding: 1rem 0.75rem;
+          position: sticky;
+          top: 0;
+          z-index: 5;
+          vertical-align: middle;
         }
         
-        .table td {
+        .grid-table th:first-child {
+          border-left: 1px solid #dee2e6;
+        }
+        
+        .grid-table th:last-child {
+          border-right: 1px solid #dee2e6;
+        }
+        
+        .grid-table td {
           vertical-align: middle;
-          border-color: #e9ecef;
+          border: 1px solid #dee2e6;
+          padding: 0.75rem;
+          background-color: white;
+        }
+        
+        .grid-table tbody tr:hover td {
+          background-color: #f8f9fa;
+        }
+        
+        .grid-table tbody tr:nth-child(even) td {
+          background-color: #fafafa;
+        }
+        
+        .grid-table tbody tr:nth-child(even):hover td {
+          background-color: #f0f0f0;
         }
         
         .stats-card {
@@ -454,6 +494,29 @@ function MasterDataManager() {
           margin-bottom: 1rem;
           opacity: 0.5;
         }
+        
+        .add-form-container {
+          background: #f8f9fa;
+          border: 1px solid #e9ecef;
+          border-top: 2px solid #dee2e6;
+          padding: 1.5rem;
+          position: sticky;
+          top: 120px;
+          z-index: 8;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        
+        .form-control-sm {
+          border: 1px solid #dee2e6;
+          border-radius: 4px;
+          padding: 0.5rem 0.75rem;
+          font-size: 0.875rem;
+        }
+        
+        .form-control-sm:focus {
+          border-color: #0d6efd;
+          box-shadow: 0 0 0 0.15rem rgba(13, 110, 253, 0.1);
+        }
       `}</style>
 
       <div className="container">
@@ -537,7 +600,7 @@ function MasterDataManager() {
 
             {/* Add New Entry Form */}
             {showAddForm && (
-              <div className="p-3" style={{ backgroundColor: '#f8f9fa', borderBottom: '1px solid #e9ecef' }}>
+              <div className="add-form-container">
                 <h6 className="mb-3">Add New {getCurrentMasterOption()?.label}</h6>
                 <div className="row g-3">
                   {getFieldsForMaster().map((field) => (
@@ -582,14 +645,14 @@ function MasterDataManager() {
             )}
 
             {/* Data Table */}
-            <div className="table-responsive">
+            <div className="table-container">
               {isLoading ? (
                 <div className="text-center py-5">
                   <div className="spinner-border text-primary mb-3"></div>
                   <p className="text-muted">Loading data...</p>
                 </div>
               ) : masterList.length > 0 ? (
-                <table className="table">
+                <table className="grid-table table">
                   <thead>
                     <tr>
                       {getFieldsForMaster().map((field) => (

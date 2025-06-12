@@ -24,9 +24,11 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [showFilteredView, setShowFilteredView] = useState(false);
   const [filteredViewData, setFilteredViewData] = useState([]);
+  const [originalFilteredData, setOriginalFilteredData] = useState([]); // Store original data for search
   const [filterType, setFilterType] = useState('');
   const [editingEntry, setEditingEntry] = useState(null);
   const [chartSize, setChartSize] = useState('medium');
+  const [searchQuery, setSearchQuery] = useState(''); // Add search state
 
   // Set default date range (1 week back from today)
   useEffect(() => {
@@ -59,6 +61,85 @@ const Dashboard = () => {
       }
     }
     return null;
+  };
+
+  // Advanced search function (similar to Entries page)
+  const parseAdvancedQuery = (query) => {
+    if (!query) return [];
+    const stopWords = ["details", "of", "on", "with", "for", "in", "at"];
+    const tokens = query
+      .toLowerCase()
+      .replace(/[^\w\s-]/g, "")
+      .split(/\s+/)
+      .filter(token => token && !stopWords.includes(token));
+    return tokens;
+  };
+
+  const normalizeDate = (dateStr) => {
+    if (!dateStr) return null;
+    const parts = dateStr.includes("-") ? dateStr.split("-") : [];
+    if (parts.length === 3) {
+      const [a, b, c] = parts;
+      if (parseInt(a, 10) <= 31 && parseInt(b, 10) <= 12) {
+        return `${c}-${b}-${a}`;
+      }
+      if (parseInt(a, 10) >= 1000) {
+        return `${a}-${b}-${c}`;
+      }
+    }
+    return null;
+  };
+
+  // Search function for filtered view
+  const handleSearchInFilteredView = (query) => {
+    setSearchQuery(query);
+    
+    if (!query.trim()) {
+      setFilteredViewData(originalFilteredData);
+      return;
+    }
+
+    const tokens = parseAdvancedQuery(query);
+    const filtered = originalFilteredData.filter((entry) => {
+      return tokens.every(token => {
+        const textFields = [
+          "location", "customer", "line", "pol", "pod", "fpod", "vessel",
+          "bookingNo", "containerNo", "volume", "voyage", "blNo"
+        ];
+        
+        const textMatch = textFields.some(field => {
+          let value = entry[field];
+          if (typeof value === 'object' && value?.name) {
+            value = value.name;
+          }
+          return value && value.toString().toLowerCase().includes(token);
+        });
+
+        const dateFields = ["bookingDate", "bookingValidity", "etd", "sobDate"];
+        const normalizedDate = normalizeDate(token);
+        const dateMatch = normalizedDate && dateFields.some(field => {
+          return entry[field] === normalizedDate;
+        });
+
+        const booleanFields = [
+          "vgmFiled", "siFiled", "finalDG", "firstPrinted", "correctionsFinalised",
+          "blReleased", "isfSent", "sob"
+        ];
+        const booleanMatch = booleanFields.some(field => {
+          if (token === "yes" || token === "true" || token === "filed") {
+            return entry[field] === true;
+          }
+          if (token === "no" || token === "false") {
+            return entry[field] === false;
+          }
+          return false;
+        });
+
+        return textMatch || dateMatch || booleanMatch;
+      });
+    });
+
+    setFilteredViewData(filtered);
   };
 
   useEffect(() => {
@@ -279,8 +360,10 @@ const Dashboard = () => {
         return;
     }
 
+    setOriginalFilteredData(filteredData); // Store original data
     setFilteredViewData(filteredData);
     setFilterType(title);
+    setSearchQuery(''); // Reset search when opening modal
     setShowFilteredView(true);
   };
 
@@ -334,6 +417,17 @@ const Dashboard = () => {
         } : entry
       );
       setFilteredViewData(updatedData);
+      
+      // Also update original data
+      const updatedOriginalData = originalFilteredData.map(entry => 
+        entry.id === editingEntry.id ? {
+          ...entry, 
+          ...updateData,
+          customer: updateData.customer.name || updateData.customer
+        } : entry
+      );
+      setOriginalFilteredData(updatedOriginalData);
+      
       setEditingEntry(null);
       
       // Show success toast
@@ -368,6 +462,10 @@ const Dashboard = () => {
         // Update local state
         const updatedData = filteredViewData.filter(entry => entry.id !== entryId);
         setFilteredViewData(updatedData);
+        
+        // Update original data
+        const updatedOriginalData = originalFilteredData.filter(entry => entry.id !== entryId);
+        setOriginalFilteredData(updatedOriginalData);
         
         // Show success toast
         toast.success('Entry deleted successfully! ✅');
@@ -542,6 +640,28 @@ const Dashboard = () => {
           background: #1d4ed8;
           border-color: #1d4ed8;
           color: white;
+        }
+        .search-container {
+          margin-bottom: 20px;
+        }
+        .search-input {
+          width: 100%;
+          padding: 12px 16px;
+          border: 2px solid #e3f2fd;
+          border-radius: 25px;
+          font-size: 16px;
+          outline: none;
+          transition: all 0.3s ease;
+        }
+        .search-input:focus {
+          border-color: #2196f3;
+          box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
+        }
+        .search-results-info {
+          margin-top: 10px;
+          font-size: 14px;
+          color: #666;
+          text-align: center;
         }
       `}</style>
 
@@ -740,10 +860,33 @@ const Dashboard = () => {
               <h3>{filterType} ({filteredViewData.length} entries)</h3>
               <button 
                 className="btn btn-secondary"
-                onClick={() => setShowFilteredView(false)}
+                onClick={() => {
+                  setShowFilteredView(false);
+                  setSearchQuery('');
+                  setEditingEntry(null);
+                }}
               >
                 ✕ Close
               </button>
+            </div>
+            
+            {/* Search Container */}
+            <div className="search-container">
+              <input
+                type="text"
+                className="search-input"
+                placeholder="🔍 Search entries... (e.g., MAERSK, customer name, booking number, location, yes/no for checkboxes)"
+                value={searchQuery}
+                onChange={(e) => handleSearchInFilteredView(e.target.value)}
+              />
+              {searchQuery && (
+                <div className="search-results-info">
+                  {filteredViewData.length === originalFilteredData.length 
+                    ? `Showing all ${filteredViewData.length} entries`
+                    : `Found ${filteredViewData.length} of ${originalFilteredData.length} entries matching "${searchQuery}"`
+                  }
+                </div>
+              )}
             </div>
             
             <div className="table-responsive">
@@ -766,128 +909,151 @@ const Dashboard = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredViewData.map((entry, index) => (
-                    <tr key={entry.id || index}>
-                      <td>
-                        {editingEntry?.id === entry.id ? (
-                          <input 
-                            className="edit-input"
-                            value={editingEntry.bookingNo || ''}
-                            onChange={(e) => setEditingEntry({...editingEntry, bookingNo: e.target.value})}
-                          />
-                        ) : (
-                          entry.bookingNo || 'N/A'
-                        )}
-                      </td>
-                      <td>
-                        {editingEntry?.id === entry.id ? (
-                          <input 
-                            className="edit-input"
-                            value={typeof editingEntry.customer === 'object' ? editingEntry.customer?.name || '' : editingEntry.customer || ''}
-                            onChange={(e) => setEditingEntry({...editingEntry, customer: e.target.value})}
-                          />
-                        ) : (
-                          typeof entry.customer === 'object' ? entry.customer?.name || 'N/A' : entry.customer || 'N/A'
-                        )}
-                      </td>
-                      <td>{entry.line || 'N/A'}</td>
-                      <td>{entry.pol || 'N/A'}</td>
-                      <td>{entry.pod || 'N/A'}</td>
-                      <td>{entry.fpod || 'N/A'}</td>
-                      <td>{entry.vessel || 'N/A'}</td>
-                      <td>
-                        {editingEntry?.id === entry.id ? (
-                          <input 
-                            className="edit-input"
-                            value={editingEntry.volume || ''}
-                            onChange={(e) => setEditingEntry({...editingEntry, volume: e.target.value})}
-                          />
-                        ) : (
-                          entry.volume || 'N/A'
-                        )}
-                      </td>
-                      <td>{formatDate(entry.etd) || 'N/A'}</td>
-                      <td>
-                        {editingEntry?.id === entry.id ? (
-                          <input 
-                            type="checkbox"
-                            checked={editingEntry.siFiled || false}
-                            onChange={(e) => setEditingEntry({...editingEntry, siFiled: e.target.checked})}
-                            className="form-check-input"
-                          />
-                        ) : (
-                          <span className={`badge ${entry.siFiled ? 'bg-success' : 'bg-danger'}`}>
-                            {entry.siFiled ? 'Yes' : 'No'}
-                          </span>
-                        )}
-                      </td>
-                      <td>
-                        {editingEntry?.id === entry.id ? (
-                          <input 
-                            type="checkbox"
-                            checked={editingEntry.blReleased || false}
-                            onChange={(e) => setEditingEntry({...editingEntry, blReleased: e.target.checked})}
-                            className="form-check-input"
-                          />
-                        ) : (
-                          <span className={`badge ${entry.blReleased ? 'bg-success' : 'bg-danger'}`}>
-                            {entry.blReleased ? 'Yes' : 'No'}
-                          </span>
-                        )}
-                      </td>
-                      <td>
-                        {entry.volume?.toUpperCase().includes('HAZ') ? (
-                          editingEntry?.id === entry.id ? (
-                            <input 
-                              type="checkbox"
-                              checked={editingEntry.finalDG || false}
-                              onChange={(e) => setEditingEntry({...editingEntry, finalDG: e.target.checked})}
-                              className="form-check-input"
-                            />
-                          ) : (
-                            <span className={`badge ${entry.finalDG ? 'bg-success' : 'bg-danger'}`}>
-                              {entry.finalDG ? 'Yes' : 'No'}
-                            </span>
-                          )
-                        ) : (
-                          <span className="badge bg-secondary">N/A</span>
-                        )}
-                      </td>
-                      <td>
-                        {editingEntry?.id === entry.id ? (
-                          <div className="d-flex gap-1">
+                  {filteredViewData.length === 0 ? (
+                    <tr>
+                      <td colSpan="13" className="text-center py-4">
+                        {searchQuery ? (
+                          <div>
+                            <p>🔍 No entries found matching your search criteria.</p>
                             <button 
-                              className="btn btn-success btn-sm"
-                              onClick={handleSaveEntry}
+                              className="btn btn-outline-primary btn-sm"
+                              onClick={() => {
+                                setSearchQuery('');
+                                handleSearchInFilteredView('');
+                              }}
                             >
-                              Save
-                            </button>
-                            <button 
-                              className="btn btn-secondary btn-sm"
-                              onClick={() => setEditingEntry(null)}
-                            >
-                              Cancel
+                              Clear Search
                             </button>
                           </div>
                         ) : (
-                          <div className="d-flex gap-1">
-                            <button 
-                              className="btn btn-primary btn-sm"
-                              onClick={() => handleEditEntry(entry)}
-                            >
-                              Edit
-                            </button>
-                            <button 
-                              className="btn btn-danger btn-sm"
-                              onClick={() => handleDeleteEntry(entry.id)}
-                            >
-                              Delete
-                            </button>
-                          </div>
+                          <p>No entries found.</p>
                         )}
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    filteredViewData.map((entry, index) => (
+                      <tr key={entry.id || index}>
+                        <td>
+                          {editingEntry?.id === entry.id ? (
+                            <input 
+                              className="edit-input"
+                              value={editingEntry.bookingNo || ''}
+                              onChange={(e) => setEditingEntry({...editingEntry, bookingNo: e.target.value})}
+                            />
+                          ) : (
+                            entry.bookingNo || 'N/A'
+                          )}
+                        </td>
+                        <td>
+                          {editingEntry?.id === entry.id ? (
+                            <input 
+                              className="edit-input"
+                              value={typeof editingEntry.customer === 'object' ? editingEntry.customer?.name || '' : editingEntry.customer || ''}
+                              onChange={(e) => setEditingEntry({...editingEntry, customer: e.target.value})}
+                            />
+                          ) : (
+                            typeof entry.customer === 'object' ? entry.customer?.name || 'N/A' : entry.customer || 'N/A'
+                          )}
+                        </td>
+                        <td>{entry.line || 'N/A'}</td>
+                        <td>{entry.pol || 'N/A'}</td>
+                        <td>{entry.pod || 'N/A'}</td>
+                        <td>{entry.fpod || 'N/A'}</td>
+                        <td>{entry.vessel || 'N/A'}</td>
+                        <td>
+                          {editingEntry?.id === entry.id ? (
+                            <input 
+                              className="edit-input"
+                              value={editingEntry.volume || ''}
+                              onChange={(e) => setEditingEntry({...editingEntry, volume: e.target.value})}
+                            />
+                          ) : (
+                            entry.volume || 'N/A'
+                          )}
+                        </td>
+                        <td>{formatDate(entry.etd) || 'N/A'}</td>
+                        <td>
+                          {editingEntry?.id === entry.id ? (
+                            <input 
+                              type="checkbox"
+                              checked={editingEntry.siFiled || false}
+                              onChange={(e) => setEditingEntry({...editingEntry, siFiled: e.target.checked})}
+                              className="form-check-input"
+                            />
+                          ) : (
+                            <span className={`badge ${entry.siFiled ? 'bg-success' : 'bg-danger'}`}>
+                              {entry.siFiled ? 'Yes' : 'No'}
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          {editingEntry?.id === entry.id ? (
+                            <input 
+                              type="checkbox"
+                              checked={editingEntry.blReleased || false}
+                              onChange={(e) => setEditingEntry({...editingEntry, blReleased: e.target.checked})}
+                              className="form-check-input"
+                            />
+                          ) : (
+                            <span className={`badge ${entry.blReleased ? 'bg-success' : 'bg-danger'}`}>
+                              {entry.blReleased ? 'Yes' : 'No'}
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          {entry.volume?.toUpperCase().includes('HAZ') ? (
+                            editingEntry?.id === entry.id ? (
+                              <input 
+                                type="checkbox"
+                                checked={editingEntry.finalDG || false}
+                                onChange={(e) => setEditingEntry({...editingEntry, finalDG: e.target.checked})}
+                                className="form-check-input"
+                              />
+                            ) : (
+                              <span className={`badge ${entry.finalDG ? 'bg-success' : 'bg-danger'}`}>
+                                {entry.finalDG ? 'Yes' : 'No'}
+                              </span>
+                            )
+                          ) : (
+                            <span className="badge bg-secondary">N/A</span>
+                          )}
+                        </td>
+                        <td>
+                          {editingEntry?.id === entry.id ? (
+                            <div className="d-flex gap-1">
+                              <button 
+                                className="btn btn-success btn-sm"
+                                onClick={handleSaveEntry}
+                              >
+                                Save
+                              </button>
+                              <button 
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => setEditingEntry(null)}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="d-flex gap-1">
+                              <button 
+                                className="btn btn-primary btn-sm"
+                                onClick={() => handleEditEntry(entry)}
+                              >
+                                Edit
+                              </button>
+                              <button 
+                                className="btn btn-danger btn-sm"
+                                onClick={() => handleDeleteEntry(entry.id)}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
