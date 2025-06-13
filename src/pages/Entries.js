@@ -599,7 +599,8 @@ function Entries() {
     {
       field: "customer",
       headerName: "Customer",
-      width: 200,
+      flex: 1,
+      minWidth: 150,
       editable: true,
       type: "singleSelect",
       valueOptions: masterData.customer,
@@ -609,7 +610,8 @@ function Entries() {
     {
       field: "line",
       headerName: "Line",
-      width: 150,
+      flex: 0.8,
+      minWidth: 120,
       editable: true,
       type: "singleSelect",
       valueOptions: masterData.line,
@@ -618,14 +620,16 @@ function Entries() {
     {
       field: "bookingNo",
       headerName: "Booking No",
-      width: 180,
+      flex: 1,
+      minWidth: 140,
       editable: true,
       renderCell: (params) => params.value || ""
     },
     ...(activeLocationFilter === "SEE ALL" ? [{
       field: "location",
       headerName: "Location",
-      width: 150,
+      flex: 0.8,
+      minWidth: 120,
       editable: true,
       type: "singleSelect",
       valueOptions: masterData.location,
@@ -636,10 +640,35 @@ function Entries() {
       const isBooleanField = booleanFields.includes(key);
       const isDateField = ["bookingDate", "bookingValidity", "etd"].includes(key);
       
+      // Set flex and minWidth based on field type
+      let flex = 1;
+      let minWidth = 120;
+      
+      if (key === "salesPersonName") {
+        flex = 1;
+        minWidth = 140;
+      } else if (isDateField) {
+        flex = 0.8;
+        minWidth = 120;
+      } else if (isBooleanField) {
+        flex = 0.6;
+        minWidth = 100;
+      } else if (key === "containerNo" || key === "volume") {
+        flex = 1.2;
+        minWidth = 160;
+      } else if (key === "vessel" || key === "voyage") {
+        flex = 0.9;
+        minWidth = 130;
+      } else if (key === "portCutOff" || key === "siCutOff") {
+        flex = 1;
+        minWidth = 140;
+      }
+      
       return {
         field: key,
         headerName: entryFields[key],
-        width: 180,
+        flex: flex,
+        minWidth: minWidth,
         editable: key !== "salesPersonName",
         ...(isMasterField && {
           type: "singleSelect",
@@ -766,7 +795,8 @@ function Entries() {
     allColumns.splice(siFiledIndex + 1, 0, {
       field: "finalDG",
       headerName: "FINAL DG",
-      width: 180,
+      flex: 0.8,
+      minWidth: 100,
       editable: true,
       renderCell: (params) => {
         const volume = params.row.volume || "";
@@ -792,7 +822,8 @@ function Entries() {
     allColumns.splice(firstPrintedIndex + 1, 0, {
       field: "isfSent",
       headerName: "ISF SENT",
-      width: 180,
+      flex: 0.8,
+      minWidth: 100,
       editable: true,
       renderCell: (params) => {
         const entryFpod = params.row.fpod || "";
@@ -822,7 +853,8 @@ function Entries() {
     allColumns.splice(firstPrintedIndex + 2, 0, {
       field: "sob",
       headerName: "SOB",
-      width: 180,
+      flex: 0.6,
+      minWidth: 80,
       editable: true,
       renderCell: (params) => (
         <Checkbox
@@ -838,18 +870,23 @@ function Entries() {
   allColumns.push({
     field: "blNo",
     headerName: "BL No",
-    width: 200,
+    flex: 1,
+    minWidth: 140,
     editable: true
   });
 
   allColumns.push({
     field: "actions",
     headerName: "Actions",
-    width: 100,
+    flex: 0.5,
+    minWidth: 80,
+    sortable: false,
+    filterable: false,
     renderCell: (params) => (
       <IconButton
         color="error"
         onClick={() => handleDeleteClick(params.row)}
+        size="small"
       >
         <DeleteIcon />
       </IconButton>
@@ -1261,36 +1298,37 @@ function Entries() {
           disableColumnMenu={false}
           rowHeight={52}
           autoHeight={false}
-          // Disable diagonal scroll and enable column resizing
+          // Enable column resizing and auto-sizing
           disableColumnResize={false}
+          // Auto-size columns to fit content
+          columnBuffer={2}
           sx={{
             height: '100%',
             width: '100%',
             border: 'none',
-            // Disable diagonal scrolling
-            '& .MuiDataGrid-virtualScroller': {
-              overflowX: 'auto',
-              overflowY: 'auto',
-              '&::-webkit-scrollbar': {
-                height: '12px',
-                width: '12px',
-              },
-              '&::-webkit-scrollbar-track': {
-                backgroundColor: '#f1f1f1',
-              },
-              '&::-webkit-scrollbar-thumb': {
-                backgroundColor: '#888',
-                borderRadius: '6px',
-              },
-              '&::-webkit-scrollbar-thumb:hover': {
-                backgroundColor: '#555',
-              },
+            // Completely disable diagonal scrolling
+            '& .MuiDataGrid-main': {
+              overflow: 'hidden',
             },
+            '& .MuiDataGrid-virtualScroller': {
+              // Prevent diagonal scroll by separating horizontal and vertical scroll areas
+              overflow: 'hidden !important',
+            },
+            '& .MuiDataGrid-virtualScrollerContent': {
+              overflow: 'hidden !important',
+            },
+            '& .MuiDataGrid-virtualScrollerRenderZone': {
+              overflow: 'hidden !important',
+            },
+            // Create separate scroll areas
             '& .MuiDataGrid-columnHeaders': {
               backgroundColor: '#f8f9fa',
               fontWeight: 'bold',
               fontSize: '14px',
               borderBottom: '2px solid #e0e0e0',
+              position: 'sticky',
+              top: 0,
+              zIndex: 2,
             },
             '& .MuiDataGrid-columnHeader': {
               padding: '8px 4px',
@@ -1302,12 +1340,19 @@ function Entries() {
               },
             },
             '& .MuiDataGrid-columnSeparator': {
-              display: 'block', // Show column separators for resizing
+              display: 'block',
               color: '#ddd',
+              '&:hover': {
+                color: '#1976d2',
+              },
             },
             '& .MuiDataGrid-cell': {
               borderRight: '1px solid #f0f0f0',
               fontSize: '13px',
+              padding: '8px',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
               '&:focus': {
                 outline: 'none',
               },
@@ -1323,6 +1368,38 @@ function Entries() {
             },
             '& .MuiDataGrid-row.Mui-selected:hover': {
               backgroundColor: '#bbdefb !important',
+            },
+            // Custom scrollbars for horizontal scroll only
+            '& .MuiDataGrid-horizontalScrollbar': {
+              '&::-webkit-scrollbar': {
+                height: '12px',
+              },
+              '&::-webkit-scrollbar-track': {
+                backgroundColor: '#f1f1f1',
+              },
+              '&::-webkit-scrollbar-thumb': {
+                backgroundColor: '#888',
+                borderRadius: '6px',
+              },
+              '&::-webkit-scrollbar-thumb:hover': {
+                backgroundColor: '#555',
+              },
+            },
+            // Custom scrollbars for vertical scroll only
+            '& .MuiDataGrid-verticalScrollbar': {
+              '&::-webkit-scrollbar': {
+                width: '12px',
+              },
+              '&::-webkit-scrollbar-track': {
+                backgroundColor: '#f1f1f1',
+              },
+              '&::-webkit-scrollbar-thumb': {
+                backgroundColor: '#888',
+                borderRadius: '6px',
+              },
+              '&::-webkit-scrollbar-thumb:hover': {
+                backgroundColor: '#555',
+              },
             },
           }}
         />
