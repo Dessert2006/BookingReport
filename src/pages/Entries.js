@@ -85,7 +85,7 @@ const entryFields = {
   etd: "ETD",
   vgmFiled: "VGM Filed",
   siFiled: "SI Filed",
-  firstPrinted: "First Printed",
+  firstPrinted: "First Print",
   correctionsFinalised: "Corrections Finalised",
   blReleased: "B/L Released",
 };
@@ -121,6 +121,8 @@ function Entries() {
   const [sobDialogOpen, setSobDialogOpen] = useState(false);
   const [sobDateInput, setSobDateInput] = useState("");
   const [rowForSob, setRowForSob] = useState(null);
+  const [sobConfirmDialogOpen, setSobConfirmDialogOpen] = useState(false);
+  const [sobResult, setSobResult] = useState(null);
 
   const formatCutOffInput = (value) => {
     if (!value) return "";
@@ -901,56 +903,132 @@ function Entries() {
       return;
     }
 
+    setSobDialogOpen(false);
+    
+    // Show confirmation dialog with processing message
+    setSobResult({
+      date: formatDate(sobDateInput),
+      processing: true,
+      emailSent: false,
+      emailError: null
+    });
+    setSobConfirmDialogOpen(true);
+
     const formattedSobDate = formatDate(sobDateInput);
     const newRow = { ...rowForSob, sob: true, sobDate: formattedSobDate };
 
     try {
-      // Update Firestore
+      // Update Firestore first
       await handleProcessRowUpdate(newRow, rowForSob);
+      
+      // Update result to show database update success
+      setSobResult(prev => ({
+        ...prev,
+        processing: false,
+        databaseUpdated: true
+      }));
 
-      // Send email via Python API
+      // Try to send email via Python API
       if (newRow.customerEmail && newRow.salesPersonEmail) {
-        // Ensure container_no is a string
-        const containerNo = Array.isArray(newRow.containerNo) 
-          ? newRow.containerNo.join(', ') 
-          : newRow.containerNo || '';
+        try {
+          // Ensure container_no is a string
+          const containerNo = Array.isArray(newRow.containerNo) 
+            ? newRow.containerNo.join(', ') 
+            : newRow.containerNo || '';
 
-        const emailData = {
-          customer_email: newRow.customerEmail,
-          sales_person_email: newRow.salesPersonEmail,
-          customer_name: newRow.customer?.name || newRow.customer,
-          booking_no: newRow.bookingNo,
-          sob_date: formattedSobDate,
-          vessel: newRow.vessel,
-          voyage: newRow.voyage,
-          pol: newRow.pol,
-          pod: newRow.pod,
-          fpod: newRow.fpod || '',
-          container_no: containerNo,
-          volume: newRow.volume,
-          bl_no: newRow.blNo || ''
-        };
+          const emailData = {
+            customer_email: newRow.customerEmail,
+            sales_person_email: newRow.salesPersonEmail,
+            customer_name: newRow.customer?.name || newRow.customer,
+            booking_no: newRow.bookingNo,
+            sob_date: formattedSobDate,
+            vessel: newRow.vessel,
+            voyage: newRow.voyage,
+            pol: newRow.pol,
+            pod: newRow.pod,
+            fpod: newRow.fpod || '',
+            container_no: containerNo,
+            volume: newRow.volume,
+            bl_no: newRow.blNo || ''
+          };
 
-        console.log("Sending emailData:", emailData);
-        await axios.post('http://localhost:5000/api/send-sob-email', emailData);
-        toast.success("SOB email sent successfully!");
+          console.log("Sending emailData:", emailData);
+          
+          // Check if all required fields are present
+          const requiredFields = ['customer_email', 'sales_person_email', 'customer_name', 'booking_no'];
+          const missingFields = requiredFields.filter(field => !emailData[field]);
+          
+          if (missingFields.length > 0) {
+            throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
+          }
+
+          await axios.post('http://localhost:5000/api/send-sob-email', emailData, {
+            timeout: 10000 // 10 second timeout
+          });
+          
+          setSobResult(prev => ({
+            ...prev,
+            emailSent: true
+          }));
+          
+        } catch (emailError) {
+          console.error("Email sending error:", emailError);
+          let errorMessage = "Unknown error occurred";
+          
+          if (emailError.code === 'ECONNREFUSED') {
+            errorMessage = "Email service not available (connection refused)";
+          } else if (emailError.code === 'ETIMEDOUT') {
+            errorMessage = "Email service timeout";
+          } else if (emailError.response) {
+            errorMessage = `Email API error: ${emailError.response.status} - ${emailError.response.data?.message || emailError.response.statusText}`;
+          } else if (emailError.request) {
+            errorMessage = "No response from email service";
+          } else {
+            errorMessage = emailError.message;
+          }
+          
+          setSobResult(prev => ({
+            ...prev,
+            emailSent: false,
+            emailError: errorMessage
+          }));
+        }
       } else {
-        toast.warn("Email addresses missing for customer or salesperson.");
+        const missingEmails = [];
+        if (!newRow.customerEmail) missingEmails.push("customer email");
+        if (!newRow.salesPersonEmail) missingEmails.push("salesperson email");
+        
+        setSobResult(prev => ({
+          ...prev,
+          emailSent: false,
+          emailError: `Missing ${missingEmails.join(' and ')} in customer master data`
+        }));
       }
 
-      setSobDialogOpen(false);
-      setRowForSob(null);
-      setSobDateInput("");
     } catch (error) {
       console.error("Error processing SOB: ", error);
-      toast.error("Failed to process SOB or send email.");
+      setSobResult(prev => ({
+        ...prev,
+        processing: false,
+        databaseUpdated: false,
+        emailSent: false,
+        emailError: "Failed to update database"
+      }));
     }
+
+    setRowForSob(null);
+    setSobDateInput("");
   };
 
   const handleSobCancel = () => {
     setSobDialogOpen(false);
     setRowForSob(null);
     setSobDateInput("");
+  };
+
+  const handleSobConfirmClose = () => {
+    setSobConfirmDialogOpen(false);
+    setSobResult(null);
   };
 
   const handleCheckboxEdit = async (row, field, value) => {
@@ -1183,10 +1261,31 @@ function Entries() {
           disableColumnMenu={false}
           rowHeight={52}
           autoHeight={false}
+          // Disable diagonal scroll and enable column resizing
+          disableColumnResize={false}
           sx={{
             height: '100%',
             width: '100%',
             border: 'none',
+            // Disable diagonal scrolling
+            '& .MuiDataGrid-virtualScroller': {
+              overflowX: 'auto',
+              overflowY: 'auto',
+              '&::-webkit-scrollbar': {
+                height: '12px',
+                width: '12px',
+              },
+              '&::-webkit-scrollbar-track': {
+                backgroundColor: '#f1f1f1',
+              },
+              '&::-webkit-scrollbar-thumb': {
+                backgroundColor: '#888',
+                borderRadius: '6px',
+              },
+              '&::-webkit-scrollbar-thumb:hover': {
+                backgroundColor: '#555',
+              },
+            },
             '& .MuiDataGrid-columnHeaders': {
               backgroundColor: '#f8f9fa',
               fontWeight: 'bold',
@@ -1201,6 +1300,10 @@ function Entries() {
               '&:hover': {
                 backgroundColor: '#e3f2fd',
               },
+            },
+            '& .MuiDataGrid-columnSeparator': {
+              display: 'block', // Show column separators for resizing
+              color: '#ddd',
             },
             '& .MuiDataGrid-cell': {
               borderRight: '1px solid #f0f0f0',
@@ -1221,17 +1324,11 @@ function Entries() {
             '& .MuiDataGrid-row.Mui-selected:hover': {
               backgroundColor: '#bbdefb !important',
             },
-            '& .MuiDataGrid-columnSeparator': {
-              display: 'none',
-            },
-            '& .MuiDataGrid-virtualScroller': {
-              overflowX: 'auto',
-              overflowY: 'auto',
-            },
           }}
         />
       </div>
 
+      {/* BL No Input Dialog */}
       <Dialog open={openDialog} onClose={handleDialogClose}>
         <DialogTitle>Enter BL No</DialogTitle>
         <DialogContent>
@@ -1251,6 +1348,7 @@ function Entries() {
         </DialogActions>
       </Dialog>
 
+      {/* SOB Date Input Dialog */}
       <Dialog open={sobDialogOpen} onClose={handleSobCancel}>
         <DialogTitle>Enter SOB Date</DialogTitle>
         <DialogContent>
@@ -1271,6 +1369,75 @@ function Entries() {
         </DialogActions>
       </Dialog>
 
+      {/* SOB Confirmation Dialog */}
+      <Dialog 
+        open={sobConfirmDialogOpen} 
+        onClose={handleSobConfirmClose}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>SOB Processing Status</DialogTitle>
+        <DialogContent>
+          <div style={{ padding: '20px 0' }}>
+            <div style={{ marginBottom: '15px' }}>
+              <strong>SOB Date:</strong> {sobResult?.date}
+            </div>
+            
+            <div style={{ marginBottom: '15px' }}>
+              <strong>Database Update:</strong>{' '}
+              {sobResult?.processing ? (
+                <span style={{ color: '#ff9800' }}>⏳ Processing...</span>
+              ) : sobResult?.databaseUpdated ? (
+                <span style={{ color: '#4caf50' }}>✅ Successfully Updated</span>
+              ) : (
+                <span style={{ color: '#f44336' }}>❌ Failed to Update</span>
+              )}
+            </div>
+            
+            <div style={{ marginBottom: '15px' }}>
+              <strong>Email Status:</strong>{' '}
+              {sobResult?.processing ? (
+                <span style={{ color: '#ff9800' }}>⏳ Processing...</span>
+              ) : sobResult?.emailSent ? (
+                <span style={{ color: '#4caf50' }}>✅ Email Sent Successfully</span>
+              ) : (
+                <span style={{ color: '#f44336' }}>❌ Email Failed</span>
+              )}
+            </div>
+            
+            {sobResult?.emailError && (
+              <div style={{ 
+                marginTop: '15px', 
+                padding: '10px', 
+                backgroundColor: '#ffebee', 
+                borderRadius: '4px',
+                border: '1px solid #ffcdd2'
+              }}>
+                <strong>Email Error Details:</strong>
+                <div style={{ marginTop: '5px', fontSize: '14px', color: '#d32f2f' }}>
+                  {sobResult.emailError}
+                </div>
+                <div style={{ marginTop: '10px', fontSize: '12px', color: '#666' }}>
+                  <strong>Debugging Info:</strong>
+                  <ul style={{ margin: '5px 0', paddingLeft: '20px' }}>
+                    <li>Check if Python email service is running on port 5000</li>
+                    <li>Verify customer and salesperson email addresses in master data</li>
+                    <li>Check network connectivity to email service</li>
+                    <li>Review email service logs for additional details</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleSobConfirmClose} color="primary">
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* B/L Release Confirmation Dialog */}
       <Dialog open={confirmDialogOpen} onClose={handleCancelComplete}>
         <DialogTitle>Confirm B/L Release</DialogTitle>
         <DialogContent>
@@ -1284,6 +1451,7 @@ function Entries() {
         </DialogActions>
       </Dialog>
 
+      {/* Delete Confirmation Dialog */}
       <Dialog open={deleteDialogOpen} onClose={handleDeleteCancel}>
         <DialogTitle>Confirm Deletion</DialogTitle>
         <DialogContent>
