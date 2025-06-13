@@ -35,9 +35,7 @@ function App() {
             {/* Collapsible nav menu */}
             <div className="collapse navbar-collapse" id="navbarNav">
               <ul className="navbar-nav me-auto mb-2 mb-lg-0">
-                <li className="nav-item">
-                  <Link className="nav-link" to="/master">Add Master Data</Link>
-                </li>
+  
                 <li className="nav-item">
                   <Link className="nav-link" to="/booking-request">Booking Request Form</Link>
                 </li>
@@ -48,10 +46,13 @@ function App() {
                   <Link className="nav-link" to="/entries">View Entries</Link>
                 </li>
                 <li className="nav-item">
-                  <Link className="nav-link" to="/manage-master">Manage Master Data</Link>
+                  <Link className="nav-link" to="/completed-files">Completed Files</Link>
                 </li>
                 <li className="nav-item">
-                  <Link className="nav-link" to="/completed-files">Completed Files</Link>
+                  <Link className="nav-link" to="/master">Add Master Data</Link>
+                </li>
+                <li className="nav-item">
+                  <Link className="nav-link" to="/manage-master">Manage Master Data</Link>
                 </li>
               </ul>
             </div>
@@ -62,12 +63,12 @@ function App() {
         <div className="container-fluid mt-4">
           <Routes>
             <Route path="/" element={<Dashboard />} />
-            <Route path="/master" element={<MasterData />} />
             <Route path="/booking-request" element={<BookingRequestForm />} />
             <Route path="/booking" element={<AddBooking />} />
             <Route path="/entries" element={<Entries />} />
-            <Route path="/manage-master" element={<MasterDataManager />} />
             <Route path="/completed-files" element={<CompletedFiles />} />
+            <Route path="/master" element={<MasterData />} />
+            <Route path="/manage-master" element={<MasterDataManager />} />
           </Routes>
         </div>
 

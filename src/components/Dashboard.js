@@ -210,8 +210,7 @@ const Dashboard = () => {
       
       // NEW PENDING COUNTERS
       const pendingSI = activeEntries.filter(entry => !entry.siFiled).length;
-      const pendingBLRelease = activeEntries.filter(entry => !entry.blReleased).length;
-      
+      const pendingBLRelease = activeEntries.filter(entry => entry.sob === true && !entry.blReleased).length;
       // For Final DG - only count entries with HAZ volume
       const pendingFinalDG = activeEntries.filter(entry => {
         const volume = entry.volume || "";
@@ -233,9 +232,9 @@ const Dashboard = () => {
       const dateMap = new Map();
       filteredData.forEach(entry => {
         if (entry.etd) {
-          const date = new Date(entry.etd);
-          if (date >= new Date(dateRange.startDate) && date <= new Date(dateRange.endDate)) {
-            const dateStr = date.toLocaleDateString('en-GB', { 
+          const etdDate = new Date(entry.etd); // renamed to avoid redeclaration
+          if (etdDate >= new Date(dateRange.startDate) && etdDate <= new Date(dateRange.endDate)) {
+            const dateStr = etdDate.toLocaleDateString('en-GB', { 
               day: '2-digit',
               month: 'short'
             });
@@ -337,7 +336,8 @@ const Dashboard = () => {
       case 'pendingBLRelease':
         filteredData = allEntries.filter(entry => {
           if (selectedLocation !== 'All' && entry.location !== selectedLocation) return false;
-          return !entry.blReleased;
+          // Only show entries where SOB is ticked and BL Release is unticked
+          return entry.sob === true && !entry.blReleased;
         });
         title = 'Pending B/L Release';
         break;

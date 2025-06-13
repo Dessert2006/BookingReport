@@ -71,7 +71,7 @@ const entryFields = {
   salesPersonName: "Sales",
   bookingDate: "Booking Date",
   bookingNo: "Booking No",
-  bookingValidity: "Expiry",
+  bookingValidity: "BKG Validity",
   line: "Line",
   pol: "POL",
   pod: "POD",
@@ -88,6 +88,7 @@ const entryFields = {
   firstPrinted: "First Print",
   correctionsFinalised: "Corrections Finalised",
   blReleased: "B/L Released",
+  referenceNo: "Reference NO",
 };
 
 function Entries() {
@@ -123,6 +124,9 @@ function Entries() {
   const [rowForSob, setRowForSob] = useState(null);
   const [sobConfirmDialogOpen, setSobConfirmDialogOpen] = useState(false);
   const [sobResult, setSobResult] = useState(null);
+  const [containerNoDialogOpen, setContainerNoDialogOpen] = useState(false);
+  const [sobMissingDialogOpen, setSobMissingDialogOpen] = useState(false);
+  const [sobMissingFields, setSobMissingFields] = useState([]);
 
   const formatCutOffInput = (value) => {
     if (!value) return "";
@@ -596,6 +600,17 @@ function Entries() {
   ];
 
   const allColumns = [
+    ...(activeLocationFilter === "SEE ALL" ? [{
+      field: "location",
+      headerName: "Location",
+      flex: 0.7,
+      minWidth: 120,
+      maxWidth: 180,
+      editable: true,
+      type: "singleSelect",
+      valueOptions: masterData.location,
+      renderCell: (params) => params.value || ""
+    }] : []),
     {
       field: "customer",
       headerName: "Customer",
@@ -609,6 +624,15 @@ function Entries() {
       renderCell: (params) => params.value?.name || params.value || ""
     },
     {
+      field: "salesPersonName",
+      headerName: "Sales",
+      flex: 1,
+      minWidth: 140,
+      maxWidth: 250,
+      editable: false,
+      renderCell: (params) => params.value || ""
+    },
+    {
       field: "line",
       headerName: "Line",
       flex: 0.7,
@@ -620,6 +644,15 @@ function Entries() {
       renderCell: (params) => params.value || ""
     },
     {
+      field: "referenceNo",
+      headerName: "Reference NO",
+      flex: 0.8,
+      minWidth: 120,
+      maxWidth: 200,
+      editable: true,
+      renderCell: (params) => params.value || ""
+    },
+    {
       field: "bookingNo",
       headerName: "Booking No",
       flex: 0.9,
@@ -628,18 +661,7 @@ function Entries() {
       editable: true,
       renderCell: (params) => params.value || ""
     },
-    ...(activeLocationFilter === "SEE ALL" ? [{
-      field: "location",
-      headerName: "Location",
-      flex: 0.7,
-      minWidth: 120,
-      maxWidth: 180,
-      editable: true,
-      type: "singleSelect",
-      valueOptions: masterData.location,
-      renderCell: (params) => params.value || ""
-    }] : []),
-    ...Object.keys(entryFields).filter(key => !['customer', 'line', 'bookingNo'].includes(key)).map((key) => {
+    ...Object.keys(entryFields).filter(key => !['customer', 'salesPersonName', 'line', 'referenceNo', 'bookingNo', 'location'].includes(key)).map((key) => {
       const isMasterField = masterFields.includes(key);
       const isBooleanField = booleanFields.includes(key);
       const isDateField = ["bookingDate", "bookingValidity", "etd"].includes(key);
@@ -938,6 +960,29 @@ function Entries() {
 
   const handleSobCheckbox = (row, checked) => {
     if (checked) {
+      const missingFields = [];
+      const containerNo = row.containerNo;
+      if (!containerNo || containerNo.trim() === "") {
+        missingFields.push("Container No");
+      }
+      if (row.hasOwnProperty('vgmFiled') && !row.vgmFiled) missingFields.push("VGM Filed");
+      if (row.hasOwnProperty('siFiled') && !row.siFiled) missingFields.push("SI Filed");
+      // Only check Final DG if volume contains HAZ (case-insensitive)
+      if (row.hasOwnProperty('finalDG') && String(row.volume || '').toUpperCase().includes('HAZ') && !row.finalDG) {
+        missingFields.push("Final DG");
+      }
+      // Only check ISF Sent if FPOD/country contains USA
+      if (row.hasOwnProperty('isfSent')) {
+        const fpod = String(row.fpod || '');
+        if (fpod.toUpperCase().includes('USA') && !row.isfSent) {
+          missingFields.push("ISF Sent");
+        }
+      }
+      if (missingFields.length > 0) {
+        setSobMissingFields(missingFields);
+        setSobMissingDialogOpen(true);
+        return;
+      }
       setRowForSob(row);
       setSobDateInput("");
       setSobDialogOpen(true);
@@ -1519,6 +1564,35 @@ function Entries() {
           <Button onClick={handleDeleteCancel}>Cancel</Button>
           <Button onClick={handleDeleteConfirm} color="error">
             Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Container Number Required Dialog */}
+      <Dialog open={containerNoDialogOpen} onClose={() => setContainerNoDialogOpen(false)}>
+        <DialogTitle>Container Number Required</DialogTitle>
+        <DialogContent>
+          Please enter the container number first before marking SOB.
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setContainerNoDialogOpen(false)} color="primary" autoFocus>
+            OK
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* SOB Missing Fields Dialog */}
+      <Dialog open={sobMissingDialogOpen} onClose={() => setSobMissingDialogOpen(false)}>
+        <DialogTitle>Fields Remaining</DialogTitle>
+        <DialogContent>
+          The following fields must be filled before marking SOB:<br/>
+          <ul>
+            {sobMissingFields.map((field, idx) => <li key={idx}>{field}</li>)}
+          </ul>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSobMissingDialogOpen(false)} color="primary" autoFocus>
+            OK
           </Button>
         </DialogActions>
       </Dialog>

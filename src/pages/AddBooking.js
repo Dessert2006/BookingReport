@@ -12,6 +12,7 @@ function AddBooking() {
     bookingValidity: "",
     line: "",
     bookingNo: "",
+    referenceNo: "", // Optional Reference NO
     pol: "",
     pod: "",
     fpod: "",
@@ -383,6 +384,7 @@ function AddBooking() {
           bookingValidity: "",
           line: "",
           bookingNo: "",
+          referenceNo: "",
           pol: "",
           pod: "",
           fpod: "",
@@ -897,6 +899,18 @@ function AddBooking() {
                 value={newEntry.bookingNo}
                 onChange={(e) => handleChange("bookingNo", e.target.value)}
                 placeholder="Enter booking number"
+              />
+            </div>
+            <div className="col-md-4">
+              <label className="form-label">
+                Reference NO <span className="optional-indicator">(Optional)</span>
+              </label>
+              <input
+                type="text"
+                className="form-control"
+                value={newEntry.referenceNo}
+                onChange={(e) => handleChange("referenceNo", e.target.value)}
+                placeholder="Enter reference number (optional)"
               />
             </div>
           </div>

@@ -85,7 +85,7 @@ function CompletedFiles() {
           finalDG: entryData.finalDG || false,
           blNo: entryData.blNo || "",
           invoiceNo: entryData.invoiceNo || "",
-          poNo: entryData.poNo || "",
+          referenceNo: entryData.referenceNo || "",
           remarks: entryData.remarks || "",
           etaDestination: entryData.etaDestination || "",
           courierDetails: entryData.courierDetails || ""
@@ -167,8 +167,8 @@ function CompletedFiles() {
       renderCell: (params) => params.value || ""
     },
     {
-      field: "poNo",
-      headerName: "PO No",
+      field: "referenceNo",
+      headerName: "Reference NO",
       width: 150,
       editable: true,
       renderCell: (params) => params.value || ""
@@ -502,7 +502,7 @@ function CompletedFiles() {
         }
       }
 
-      updateData.poNo = newRow.poNo || "";
+      updateData.referenceNo = newRow.referenceNo || "";
       updateData.remarks = newRow.remarks || "";
       updateData.etaDestination = newRow.etaDestination || "";
       updateData.courierDetails = newRow.courierDetails || "";
@@ -633,7 +633,7 @@ function CompletedFiles() {
 const entryFields = {
   bookingNo: "Booking No",
   customer: "Customer",
-  poNo: "PO No",
+  referenceNo: "Reference NO",
   bookingDate: "Booking Date",
   bookingValidity: "Booking Validity",
   line: "Line",
