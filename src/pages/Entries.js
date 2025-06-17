@@ -468,6 +468,25 @@ function Entries() {
         };
       }
 
+      // --- Container No handling ---
+      let updatedEquipmentDetails = Array.isArray(newRow.equipmentDetails)
+        ? [...newRow.equipmentDetails]
+        : [];
+      if (updatedEquipmentDetails.length > 0) {
+        // If user edited containerNo as a string, split and assign to equipmentDetails
+        let containerNumbers = [];
+        if (typeof newRow.containerNo === 'string') {
+          containerNumbers = newRow.containerNo.split(',').map(c => c.trim()).filter(Boolean);
+        } else if (Array.isArray(newRow.containerNo)) {
+          containerNumbers = newRow.containerNo.filter(Boolean);
+        }
+        // Update each equipmentDetails item with containerNo
+        updatedEquipmentDetails = updatedEquipmentDetails.map((eq, idx) => ({
+          ...eq,
+          containerNo: containerNumbers[idx] || eq.containerNo || ''
+        }));
+      }
+
       const formattedRow = {
         ...newRow,
         portCutOff: formattedPortCutOff,
@@ -478,9 +497,12 @@ function Entries() {
         salesPersonEmail: customerData.salesPersonEmail || "",
         volume: fixConcatenatedData(typeof newRow.volume === 'string' && newRow.volume.includes(',') ? 
                 newRow.volume.split(',').map(v => v.trim()).join(', ') : newRow.volume),
-        containerNo: fixConcatenatedData(typeof newRow.containerNo === 'string' && newRow.containerNo.includes(',') ? 
-                     newRow.containerNo.split(',').map(c => c.trim()).join(', ') : newRow.containerNo)
+        // containerNo: fixConcatenatedData(typeof newRow.containerNo === 'string' && newRow.containerNo.includes(',') ? 
+        //              newRow.containerNo.split(',').map(c => c.trim()).join(', ') : newRow.containerNo),
+        equipmentDetails: updatedEquipmentDetails
       };
+      // Remove top-level containerNo before saving to Firestore
+      const { containerNo, ...rowToSave } = formattedRow;
 
       const portCutOffChanged = oldRow.portCutOff !== formattedPortCutOff;
       const siCutOffChanged = oldRow.siCutOff !== formattedSiCutOff;
@@ -523,7 +545,7 @@ function Entries() {
         }
 
         const docRef = doc(db, "entries", formattedRow.id);
-        const updateData = { ...formattedRow };
+        const updateData = { ...rowToSave };
         delete updateData.id;
         delete updateData.salesPersonName;
         delete updateData.customerEmail;
@@ -541,7 +563,7 @@ function Entries() {
         setEntries(updatedEntries);
 
         const docRef = doc(db, "entries", formattedRow.id);
-        const updateData = { ...formattedRow };
+        const updateData = { ...rowToSave };
         delete updateData.id;
         delete updateData.salesPersonName;
         delete updateData.customerEmail;
