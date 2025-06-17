@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { doc, getDoc, setDoc, updateDoc, arrayUnion } from "firebase/firestore";
 import { db } from "../firebase";
-import { collection, getDocs } from "firebase/firestore";
 
 function MasterData() {
   // Add temporary state for email input strings
@@ -19,8 +18,6 @@ function MasterData() {
     vessel: { name: "", flag: "" },
     equipmentType: { type: "" }
   });
-
-  const [customers, setCustomers] = useState([]);
 
   const [isLoading, setIsLoading] = useState(false);
   const [showModal, setShowModal] = useState({ open: false, field: "" });
@@ -84,14 +81,6 @@ function MasterData() {
     ).length;
     setProgress((filledFields / totalFields) * 100);
   }, [newMaster]);
-
-  useEffect(() => {
-    const fetchCustomers = async () => {
-      const customerSnapshot = await getDocs(collection(db, "customers"));
-      setCustomers(customerSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    };
-    fetchCustomers();
-  }, []);
 
   const showToast = (message, type = 'info') => {
     console.log(`Toast: ${message} (${type})`);

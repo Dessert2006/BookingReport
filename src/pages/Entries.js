@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { db } from "../firebase";
 import { collection, getDocs, doc, updateDoc, getDoc, addDoc, deleteDoc, query, where } from "firebase/firestore";
 import { DataGrid } from "@mui/x-data-grid";
-import { TextField, Checkbox, Dialog, DialogActions, DialogTitle, DialogContent, Button, FormControlLabel, IconButton, Box } from "@mui/material";
+import { TextField, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, Button, FormControlLabel, IconButton, Box } from "@mui/material";
 import DeleteIcon from '@mui/icons-material/Delete';
 import { toast } from "react-toastify";
 import * as XLSX from "xlsx";
@@ -74,6 +74,7 @@ const entryFields = {
   pol: "POL",
   pod: "POD",
   fpod: "FPOD",
+  containerNo: "Container No",
   volume: "Volume",
   vessel: "Vessel",
   voyage: "Voyage",
@@ -123,6 +124,7 @@ function Entries() {
   const [rowForSob, setRowForSob] = useState(null);
   const [sobConfirmDialogOpen, setSobConfirmDialogOpen] = useState(false);
   const [sobResult, setSobResult] = useState(null);
+  const [containerNoDialogOpen, setContainerNoDialogOpen] = useState(false);
   const [sobMissingDialogOpen, setSobMissingDialogOpen] = useState(false);
   const [sobMissingFields, setSobMissingFields] = useState([]);
   const [mailStatusDialogOpen, setMailStatusDialogOpen] = useState(false);
@@ -130,7 +132,7 @@ function Entries() {
   const [blTypeDialogOpen, setBlTypeDialogOpen] = useState(false);
   const [selectedBlType, setSelectedBlType] = useState("");
   const [rowForBlType, setRowForBlType] = useState(null);
-  const [customers, setCustomers] = useState({}); // customerId -> customer data
+  const [page, setPage] = useState(0);
 
   const gridContainerRef = useRef(null);
   let touchStartX = null;
@@ -265,13 +267,9 @@ function Entries() {
         return tokens.every(token => {
           const textFields = [
             "location", "customer", "line", "pol", "pod", "fpod", "vessel",
-            "bookingNo", "voyage", "blNo",
+            "bookingNo", "containerNo", "volume", "voyage", "blNo", "equipmentType",
             "portCutOff", "siCutOff", "salesPersonName"
           ];
-          const equipmentTextMatch = Array.isArray(entry.equipmentDetails) && entry.equipmentDetails.some(eq => 
-            (eq.containerNo && eq.containerNo.toString().toLowerCase().includes(token)) ||
-            (eq.equipmentType && eq.equipmentType.toString().toLowerCase().includes(token))
-          );
           const textMatch = textFields.some(field => {
             const value = typeof entry[field] === 'object' ? entry[field]?.name : entry[field];
             return value && value.toString().toLowerCase().includes(token);
@@ -297,7 +295,7 @@ function Entries() {
             return false;
           });
 
-          return textMatch || dateMatch || booleanMatch || equipmentTextMatch;
+          return textMatch || dateMatch || booleanMatch;
         });
       });
     }
@@ -315,20 +313,55 @@ function Entries() {
     const fetchEntries = async () => {
       const querySnapshot = await getDocs(collection(db, "entries"));
       const entryList = [];
+      const locationSet = new Set();
+
+      const customerDoc = await getDoc(doc(db, "newMaster", "customer"));
+      const customerMasterList = customerDoc.exists() ? customerDoc.data().list || [] : [];
 
       querySnapshot.forEach((docSnap) => {
         const entryData = { ...docSnap.data(), id: docSnap.id };
+        let customerObj = entryData.customer;
+        if (typeof customerObj === 'string') {
+          customerObj = customerMasterList.find(item => item.name === customerObj) || { 
+            name: customerObj, 
+            salesPerson: "", 
+            customerEmail: "", 
+            salesPersonEmail: ""
+          };
+        }
+
+        let containerNo = "";
+        if (Array.isArray(entryData.equipmentDetails)) {
+          containerNo = entryData.equipmentDetails
+            .map(eq => eq.containerNo)
+            .filter(Boolean)
+            .join(', ');
+        } else if (Array.isArray(entryData.containerNo)) {
+          containerNo = entryData.containerNo.filter(Boolean).join(', ');
+        } else if (typeof entryData.containerNo === 'string') {
+          containerNo = entryData.containerNo;
+        } else if (entryData.containerNo) {
+          containerNo = String(entryData.containerNo);
+        } else {
+          containerNo = "";
+        }
+
         entryList.push({
+          id: docSnap.id,
           ...entryData,
-          customerId: entryData.customerId || "",
           location: entryData.location?.name || entryData.location || "",
-          salesPersonName: entryData.salesPersonName || "",
+          customer: customerObj,
+          salesPersonName: customerObj?.salesPerson || "",
+          customerEmail: customerObj?.customerEmail || "",
+          salesPersonEmail: customerObj?.salesPersonEmail || "",
           line: entryData.line?.name || entryData.line || "",
           pol: entryData.pol?.name || entryData.pol || "",
           pod: entryData.pod?.name || entryData.pod || "",
           fpod: entryData.fpod?.name || entryData.fpod || "",
           vessel: entryData.vessel?.name || entryData.vessel || "",
+          equipmentType: entryData.equipmentType?.type || entryData.equipmentType || "",
           volume: Array.isArray(entryData.volume) ? entryData.volume.join(', ') : entryData.volume || "",
+          containerNo: containerNo,
           isfSent: entryData.isfSent || false,
           sob: entryData.sob || false,
           sobDate: entryData.sobDate || "",
@@ -338,10 +371,15 @@ function Entries() {
           invoiceNo: "",
           isNominated: entryData.isNominated || false
         });
+        console.log('containerNo for entry', docSnap.id, ':', containerNo);
+
+        if (entryData.location) {
+          locationSet.add(entryData.location);
+        }
       });
 
       setEntries(entryList);
-      setFilteredEntries(entryList);
+      setLocations([...locationSet]);
     };
 
     const fetchMasterData = async () => {
@@ -371,18 +409,8 @@ function Entries() {
       setFpodMaster(newMasterData.fpod);
     };
 
-    const fetchCustomers = async () => {
-      const customerSnapshot = await getDocs(collection(db, "customers"));
-      const customerMap = {};
-      customerSnapshot.forEach(docSnap => {
-        customerMap[docSnap.id] = { id: docSnap.id, ...docSnap.data() };
-      });
-      setCustomers(customerMap);
-    };
-
     fetchEntries();
     fetchMasterData();
-    fetchCustomers();
   }, []);
 
   const handleQuickSort = (field, direction) => {
@@ -450,6 +478,8 @@ function Entries() {
         salesPersonEmail: customerData.salesPersonEmail || "",
         volume: fixConcatenatedData(typeof newRow.volume === 'string' && newRow.volume.includes(',') ? 
                 newRow.volume.split(',').map(v => v.trim()).join(', ') : newRow.volume),
+        containerNo: fixConcatenatedData(typeof newRow.containerNo === 'string' && newRow.containerNo.includes(',') ? 
+                     newRow.containerNo.split(',').map(c => c.trim()).join(', ') : newRow.containerNo)
       };
 
       const portCutOffChanged = oldRow.portCutOff !== formattedPortCutOff;
@@ -498,7 +528,6 @@ function Entries() {
         delete updateData.salesPersonName;
         delete updateData.customerEmail;
         delete updateData.salesPersonEmail;
-        delete updateData.containerNoDisplay;
         batchUpdates.push(updateDoc(docRef, updateData));
 
         await Promise.all(batchUpdates);
@@ -517,7 +546,6 @@ function Entries() {
         delete updateData.salesPersonName;
         delete updateData.customerEmail;
         delete updateData.salesPersonEmail;
-        delete updateData.containerNoDisplay;
         await updateDoc(docRef, updateData);
         toast.success("Row updated successfully!");
       }
@@ -548,8 +576,6 @@ function Entries() {
             value = formatDate(value);
           } else if (['vgmFiled', 'siFiled', 'finalDG', 'firstPrinted', 'correctionsFinalised', 'linerInvoice', 'blReleased', 'isfSent', 'sob'].includes(column.field)) {
             value = value ? "Yes" : "No";
-          } else if (column.field === 'containerNoDisplay') {
-            value = entry.containerNoDisplay || "";
           }
           row[column.headerName] = value || "";
         }
@@ -590,7 +616,8 @@ function Entries() {
     "pol",
     "pod",
     "fpod",
-    "vessel"
+    "vessel",
+    "equipmentType"
   ];
 
   let allColumns = [
@@ -603,13 +630,13 @@ function Entries() {
       renderCell: (params) => params.value || ""
     }] : []),
     {
-      field: "customerId",
+      field: "customer",
       headerName: "Customer",
       editable: true,
       type: "singleSelect",
-      valueOptions: Object.values(customers).map(c => ({ value: c.id, label: c.name })),
+      valueOptions: masterData.customer,
       valueParser: (value) => value,
-      renderCell: (params) => customers[params.value]?.name || "",
+      renderCell: (params) => params.value?.name || params.value || ""
     },
     {
       field: "salesPersonName",
@@ -637,23 +664,7 @@ function Entries() {
       editable: true,
       renderCell: (params) => params.value || ""
     },
-    {
-      field: "containerNoDisplay",
-      headerName: "Container No",
-      editable: true,
-      renderCell: (params) => params.value || "",
-      valueSetter: (value, row) => {
-        const newEquipmentDetails = Array.isArray(row.equipmentDetails)
-          ? [...row.equipmentDetails]
-          : [{ containerNo: "", equipmentType: "", qty: "1" }];
-        newEquipmentDetails[0] = {
-          ...newEquipmentDetails[0],
-          containerNo: value
-        };
-        return { ...row, equipmentDetails: newEquipmentDetails, containerNoDisplay: value };
-      }
-    },
-    ...Object.keys(entryFields).filter(key => !['customer', 'salesPersonName', 'line', 'referenceNo', 'bookingNo', 'location', 'containerNo', 'equipmentType'].includes(key)).map((key) => {
+    ...Object.keys(entryFields).filter(key => !['customer', 'salesPersonName', 'line', 'referenceNo', 'bookingNo', 'location'].includes(key)).map((key) => {
       const isMasterField = masterFields.includes(key);
       const isBooleanField = booleanFields.includes(key);
       const isDateField = ["bookingDate", "bookingValidity", "etd"].includes(key);
@@ -665,6 +676,8 @@ function Entries() {
         flex = 0.8;
       } else if (isBooleanField) {
         flex = 0.5;
+      } else if (key === "containerNo") {
+        flex = 1.5;
       } else if (key === "volume") {
         flex = 1.2;
       } else if (key === "vessel") {
@@ -792,7 +805,7 @@ function Entries() {
           if (key === "salesPersonName") {
             return params.row.customer?.salesPerson || "";
           }
-          if (key === "volume") {
+          if (key === "volume" || key === "containerNo") {
             const value = params.value || "";
             if (typeof value === 'string' && value.includes(',')) {
               return value.split(',').map(v => v.trim()).join(', ');
@@ -959,14 +972,14 @@ function Entries() {
   const handleSobCheckbox = (row, checked) => {
     if (checked) {
       // Check if containerNo, voyage, vgmFiled, and siFiled are empty
-      let containerNo = Array.isArray(row.equipmentDetails)
-        ? row.equipmentDetails.map(eq => eq.containerNo).join(',').trim()
-        : '';
+      let containerNo = Array.isArray(row.containerNo)
+        ? row.containerNo.join(',').trim()
+        : (row.containerNo || '').trim();
       let voyage = (row.voyage || '').trim();
       let vgmFiled = row.vgmFiled;
       let siFiled = row.siFiled;
       if (!containerNo) {
-        toast.error("Please fill the Container No in Equipment Details before checking SOB.");
+        toast.error("Please fill the Container No before checking SOB.");
         return;
       }
       if (!voyage) {
@@ -982,6 +995,7 @@ function Entries() {
         return;
       }
       setRowForSob(row);
+      setSobDateInput("");
       setSobDialogOpen(true);
     } else {
       const newRow = { ...row, sob: false, sobDate: "" };
@@ -1014,9 +1028,9 @@ function Entries() {
       }
       if (newRow.customerEmail && newRow.salesPersonEmail) {
         try {
-          const containerNo = Array.isArray(newRow.equipmentDetails) 
-            ? newRow.equipmentDetails.map(eq => eq.containerNo).join(', ') 
-            : '';
+          const containerNo = Array.isArray(newRow.containerNo) 
+            ? newRow.containerNo.join(', ') 
+            : newRow.containerNo || '';
           const emailData = {
             customer_email: newRow.customerEmail,
             sales_person_email: newRow.salesPersonEmail,
@@ -1166,7 +1180,6 @@ function Entries() {
       delete entryData.salesPersonName;
       delete entryData.customerEmail;
       delete entryData.salesPersonEmail;
-      delete entryData.containerNoDisplay;
       await addDoc(collection(db, "completedFiles"), entryData);
       await deleteDoc(doc(db, "entries", updatedRow.id));
 
@@ -1591,6 +1604,18 @@ function Entries() {
           <Button onClick={handleDeleteCancel}>Cancel</Button>
           <Button onClick={handleDeleteConfirm} color="error">
             Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={containerNoDialogOpen} onClose={() => setContainerNoDialogOpen(false)}>
+        <DialogTitle>Container Number Required</DialogTitle>
+        <DialogContent>
+          Please enter the container number first before marking SOB.
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setContainerNoDialogOpen(false)} color="primary" autoFocus>
+            OK
           </Button>
         </DialogActions>
       </Dialog>
