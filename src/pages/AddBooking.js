@@ -21,7 +21,8 @@ function AddBooking() {
     voyage: "",
     portCutOff: "",
     siCutOff: "",
-    etd: ""
+    etd: "",
+    isNominated: false // <-- Add nomination field
   });
 
   const [masterData, setMasterData] = useState({
@@ -47,6 +48,7 @@ function AddBooking() {
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [customers, setCustomers] = useState([]);
 
   const fieldDefinitions = {
     location: [{ label: "Location Name", key: "name", required: true }],
@@ -109,6 +111,14 @@ function AddBooking() {
 
   useEffect(() => {
     fetchMasterData();
+  }, []);
+
+  useEffect(() => {
+    const fetchCustomers = async () => {
+      const customerSnapshot = await getDocs(collection(db, "customers"));
+      setCustomers(customerSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    };
+    fetchCustomers();
   }, []);
 
   const formatCutOffInput = (value) => {
@@ -351,7 +361,8 @@ function AddBooking() {
           blReleased: false,
           blNo: "",
           poNo: "",
-          remarks: ""
+          remarks: "",
+          isNominated: newEntry.isNominated // <-- ensure nomination is stored
         };
 
         await addDoc(collection(db, "entries"), entryData);
@@ -393,7 +404,8 @@ function AddBooking() {
           voyage: "",
           portCutOff: "",
           siCutOff: "",
-          etd: ""
+          etd: "",
+          isNominated: false // <-- reset nomination
         });
       } catch (error) {
         toast.error("Failed to add booking entry. Please try again.");
@@ -560,6 +572,13 @@ function AddBooking() {
                         handleEquipmentDetailChange(index, "equipmentType", inputValue);
                       }
                     }}
+                    onBlur={() => {
+                      const validOptions = optionsList.map(opt => opt.toUpperCase());
+                      if (!validOptions.includes((detail.equipmentType || '').toUpperCase())) {
+                        handleEquipmentDetailChange(index, "equipmentType", "");
+                        toast.warn("Please select a valid equipment type from the list.");
+                      }
+                    }}
                     isClearable
                     placeholder="Select or type equipment..."
                     styles={customSelectStyles}
@@ -666,6 +685,7 @@ function AddBooking() {
                   handleChange(field, inputValue);
                 }
               }}
+              onBlur={() => handleSelectBlur(field, optionsList)}
               isClearable
               placeholder={`Select or type ${field}...`}
               styles={customSelectStyles}
@@ -722,6 +742,19 @@ function AddBooking() {
         </div>
       </div>
     );
+  };
+
+  const handleSelectBlur = (field, optionsList) => {
+    // If the current value is not in the options, reset it
+    const validOptions = optionsList.map(opt => opt.toUpperCase());
+    if (!validOptions.includes((newEntry[field] || '').toUpperCase())) {
+      setNewEntry({ ...newEntry, [field]: '' });
+      toast.warn(`Please select a valid ${field} from the list.`);
+    }
+  };
+
+  const handleNominationChange = (e) => {
+    setNewEntry({ ...newEntry, isNominated: e.target.checked });
   };
 
   return (
@@ -846,7 +879,21 @@ function AddBooking() {
               <label className="form-label">
                 Location <span className="required-indicator">*</span>
               </label>
-              {createSelect("location", masterData.locations)}
+              <div className="d-flex align-items-center gap-2">
+                {createSelect("location", masterData.locations)}
+                <div className="form-check ms-2">
+                  <input
+                    className="form-check-input"
+                    type="checkbox"
+                    id="nominationCheckbox"
+                    checked={newEntry.isNominated}
+                    onChange={handleNominationChange}
+                  />
+                  <label className="form-check-label" htmlFor="nominationCheckbox">
+                    Nomination
+                  </label>
+                </div>
+              </div>
             </div>
             <div className="col-md-4">
               <label className="form-label">

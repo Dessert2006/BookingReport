@@ -1,7 +1,15 @@
 import React, { useState, useEffect } from "react";
 import { doc, getDoc, setDoc, updateDoc, arrayUnion } from "firebase/firestore";
+import { db } from "../firebase";
+import { collection, getDocs } from "firebase/firestore";
 
 function MasterData() {
+  // Add temporary state for email input strings
+  const [emailInputs, setEmailInputs] = useState({
+    customerEmail: '',
+    salesPersonEmail: ''
+  });
+
   const [newMaster, setNewMaster] = useState({
     customer: { name: "", contactPerson: "", customerEmail: [], contactNumber: "", address: "", salesPerson: "", salesPersonEmail: [] },
     line: { name: "", contactPerson: "", email: "", contactNumber: "" },
@@ -11,6 +19,8 @@ function MasterData() {
     vessel: { name: "", flag: "" },
     equipmentType: { type: "" }
   });
+
+  const [customers, setCustomers] = useState([]);
 
   const [isLoading, setIsLoading] = useState(false);
   const [showModal, setShowModal] = useState({ open: false, field: "" });
@@ -45,7 +55,6 @@ function MasterData() {
     equipmentType: [{ label: "Equipment Type", key: "type", required: true }]
   };
 
-  // Professional Corporate Blue Theme
   const fieldColors = {
     customer: "#0d6efd",
     line: "#6610f2", 
@@ -67,7 +76,6 @@ function MasterData() {
   };
 
   useEffect(() => {
-    // Calculate progress based on filled fields
     const totalFields = Object.keys(newMaster).length;
     const filledFields = Object.keys(newMaster).filter(field => 
       fieldDefinitions[field].some(f => 
@@ -77,30 +85,68 @@ function MasterData() {
     setProgress((filledFields / totalFields) * 100);
   }, [newMaster]);
 
+  useEffect(() => {
+    const fetchCustomers = async () => {
+      const customerSnapshot = await getDocs(collection(db, "customers"));
+      setCustomers(customerSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    };
+    fetchCustomers();
+  }, []);
+
   const showToast = (message, type = 'info') => {
+    console.log(`Toast: ${message} (${type})`);
     const toast = document.createElement('div');
-    toast.className = `toast toast-${type}`;
+    toast.className = `toast toast-${type} show`;
+    toast.style.position = 'fixed';
+    toast.style.top = '20px';
+    toast.style.right = '20px';
+    toast.style.zIndex = '2000';
     toast.textContent = message;
     document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 3000);
+    setTimeout(() => {
+      toast.classList.remove('show');
+      toast.classList.add('fade');
+      setTimeout(() => toast.remove(), 300);
+    }, 3000);
   };
 
   const handleInputChange = (field, subfield, value) => {
-    if (subfield === "customerEmail" || subfield === "salesPersonEmail") {
-      const emailArray = value.split(",").map(email => email.trim()).filter(email => email);
-      setNewMaster({
-        ...newMaster,
-        [field]: { ...newMaster[field], [subfield]: emailArray }
+    let processedValue = value;
+    // For email fields, update the temp string state
+    if (field === 'customer' && (subfield === 'customerEmail' || subfield === 'salesPersonEmail')) {
+      setEmailInputs({
+        ...emailInputs,
+        [subfield]: value
       });
-    } else {
-      setNewMaster({
-        ...newMaster,
-        [field]: { ...newMaster[field], [subfield]: value }
-      });
+      // Don't update newMaster here, will update on blur or save
+      return;
     }
+    if (typeof value === 'string' && !subfield.includes("Email")) {
+      processedValue = value.toUpperCase();
+    }
+    setNewMaster({
+      ...newMaster,
+      [field]: { ...newMaster[field], [subfield]: processedValue }
+    });
+  };
+
+  // On blur, update the array in newMaster for email fields
+  const handleEmailBlur = (field, subfield) => {
+    const value = emailInputs[subfield] || '';
+    const emailArray = value.split(',').map(email => email.trim().toLowerCase()).filter(email => email);
+    setNewMaster({
+      ...newMaster,
+      [field]: { ...newMaster[field], [subfield]: emailArray }
+    });
   };
 
   const openModal = (field) => {
+    if (field === 'customer') {
+      setEmailInputs({
+        customerEmail: newMaster.customer.customerEmail.join(', '),
+        salesPersonEmail: newMaster.customer.salesPersonEmail.join(', ')
+      });
+    }
     setShowModal({ open: true, field });
   };
 
@@ -108,8 +154,65 @@ function MasterData() {
     setShowModal({ open: false, field: "" });
   };
 
+  const addToMaster = async (field, data) => {
+    console.log(`Attempting to add to ${field}:`, data);
+    try {
+      const docRef = doc(db, "newMaster", field);
+      const docSnap = await getDoc(docRef);
+      
+      const normalizedData = Object.fromEntries(
+        Object.entries(data).map(([key, value]) => [
+          key,
+          Array.isArray(value) ? value.map(v => v.toLowerCase()) : 
+          typeof value === 'string' ? value.toUpperCase() : value
+        ])
+      );
+
+      if (docSnap.exists()) {
+        const existingData = docSnap.data().list || []; // Changed from items to list
+        const isDuplicate = existingData.some(item => 
+          (item.name || item.type)?.toUpperCase() === (normalizedData.name || normalizedData.type)?.toUpperCase()
+        );
+
+        if (isDuplicate) {
+          showToast(`${capitalize(field)} '${data.name || data.type}' already exists.`, "warning");
+          console.log(`Duplicate found for ${field}: ${data.name || data.type}`);
+          return false;
+        }
+
+        await updateDoc(docRef, {
+          list: arrayUnion(normalizedData) // Changed from items to list
+        });
+        console.log(`Successfully updated ${field} document`);
+      } else {
+        await setDoc(docRef, {
+          list: [normalizedData] // Changed from items to list
+        });
+        console.log(`Successfully created new ${field} document`);
+      }
+      
+      showToast(`${capitalize(field)} added successfully!`, "success");
+      return true;
+    } catch (error) {
+      console.error("Error adding to master:", error);
+      showToast(`Failed to add ${field}: ${error.message}`, "error");
+      return false;
+    }
+  };
+
   const handleAddSingle = async (field) => {
     setIsLoading(true);
+    if (field === 'customer') {
+      setNewMaster((prev) => ({
+        ...prev,
+        customer: {
+          ...prev.customer,
+          customerEmail: emailInputs.customerEmail.split(',').map(e => e.trim().toLowerCase()).filter(e => e),
+          salesPersonEmail: emailInputs.salesPersonEmail.split(',').map(e => e.trim().toLowerCase()).filter(e => e)
+        }
+      }));
+    }
+    console.log(`Handle add single for ${field}`);
     
     const data = newMaster[field];
     const requiredFields = fieldDefinitions[field].filter(f => f.required).map(f => f.key);
@@ -136,7 +239,6 @@ function MasterData() {
 
     const added = await addToMaster(field, data);
     if (added) {
-      showToast(`${capitalize(field)} added successfully!`, "success");
       setNewMaster({
         ...newMaster,
         [field]: Object.fromEntries(
@@ -150,6 +252,7 @@ function MasterData() {
   };
 
   const handleAddAll = async () => {
+    console.log("Handling add all");
     const filledFields = Object.keys(newMaster).filter(field => 
       fieldDefinitions[field].some(f => 
         f.key.includes("Email") ? newMaster[field][f.key].length > 0 : newMaster[field][f.key].trim()
@@ -197,25 +300,10 @@ function MasterData() {
         equipmentType: { type: "" }
       });
     } else {
-      showToast("No new entries were added due to duplicates or errors.", "warning");
+      showToast("No new entries were added.", "warning");
     }
     
     setIsLoading(false);
-  };
-
-  const addToMaster = async (field, data) => {
-    // Mock implementation - replace with actual Firebase calls
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    // Mock duplicate check
-    const isDuplicate = Math.random() < 0.1; // 10% chance of duplicate for demo
-    
-    if (isDuplicate) {
-      showToast(`${capitalize(field)} with these details already exists.`, "warning");
-      return false;
-    }
-
-    return true;
   };
 
   const capitalize = (str) => str.charAt(0).toUpperCase() + str.slice(1);
@@ -239,9 +327,14 @@ function MasterData() {
           padding: 12px 20px;
           border-radius: 8px;
           color: white;
-          z-index: 1000;
+          z-index: 2000;
           font-weight: 500;
           box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+          opacity: 0;
+          transition: opacity 0.3s ease-in-out;
+        }
+        .toast.show {
+          opacity: 1;
         }
         .toast-success { background-color: #28a745; }
         .toast-error { background-color: #dc3545; }
@@ -411,7 +504,6 @@ function MasterData() {
       `}</style>
 
       <div className="container">
-        {/* Header Section */}
         <div className="row mb-5">
           <div className="col-12 text-center">
             <h1 className="display-5 mb-3" style={{ color: '#2c3e50', fontWeight: '700' }}>
@@ -419,7 +511,6 @@ function MasterData() {
             </h1>
             <p className="text-muted fs-5 mb-4">Create and manage your master data efficiently</p>
             
-            {/* Progress Bar */}
             {progress > 0 && (
               <div className="mb-4">
                 <div className="d-flex justify-content-between align-items-center mb-2">
@@ -437,7 +528,6 @@ function MasterData() {
           </div>
         </div>
 
-        {/* Cards Grid */}
         <div className="row g-4 mb-5">
           {Object.keys(fieldDefinitions).map((field, index) => (
             <div className="col-lg-4 col-md-6" key={field}>
@@ -498,7 +588,6 @@ function MasterData() {
           ))}
         </div>
 
-        {/* Add All Button */}
         {isAnyFieldFilled && (
           <div className="row">
             <div className="col-12 text-center">
@@ -529,7 +618,6 @@ function MasterData() {
         )}
       </div>
 
-      {/* Modal */}
       {showModal.open && (
         <div className="modal">
           <div className="modal-dialog">
@@ -542,7 +630,7 @@ function MasterData() {
                   Add New {capitalize(showModal.field)}
                 </h5>
                 <button type="button" className="close" onClick={closeModal}>
-                  <span>&times;</span>
+                  <span>×</span>
                 </button>
               </div>
               
@@ -558,11 +646,21 @@ function MasterData() {
                         type={type}
                         className="form-control"
                         placeholder={`Enter ${label.toLowerCase()}${key.includes("Email") ? " (comma-separated)" : ""}`}
-                        value={Array.isArray(newMaster[showModal.field][key]) ? 
-                          newMaster[showModal.field][key].join(", ") : 
-                          newMaster[showModal.field][key]}
+                        value={
+                          showModal.field === 'customer' && (key === 'customerEmail' || key === 'salesPersonEmail')
+                            ? emailInputs[key]
+                            : Array.isArray(newMaster[showModal.field][key])
+                              ? newMaster[showModal.field][key].join(", ")
+                              : newMaster[showModal.field][key]
+                        }
                         onChange={(e) => handleInputChange(showModal.field, key, e.target.value)}
+                        onBlur={
+                          showModal.field === 'customer' && (key === 'customerEmail' || key === 'salesPersonEmail')
+                            ? () => handleEmailBlur(showModal.field, key)
+                            : undefined
+                        }
                         required={required}
+                        style={key.includes('Email') ? { textTransform: 'none' } : { textTransform: 'uppercase' }}
                       />
                     </div>
                   ))}

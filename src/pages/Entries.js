@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { db } from "../firebase";
 import { collection, getDocs, doc, updateDoc, getDoc, addDoc, deleteDoc, query, where } from "firebase/firestore";
 import { DataGrid } from "@mui/x-data-grid";
-import { TextField, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, Button, FormControlLabel, IconButton, Box } from "@mui/material";
+import { TextField, Checkbox, Dialog, DialogActions, DialogTitle, DialogContent, Button, FormControlLabel, IconButton, Box } from "@mui/material";
 import DeleteIcon from '@mui/icons-material/Delete';
 import { toast } from "react-toastify";
 import * as XLSX from "xlsx";
@@ -55,8 +55,6 @@ const styles = `
     transform: translateY(-2px);
     box-shadow: 0 3px 6px rgba(0,0,0,0.2);
   }
-  
-  /* Single grid container */
   .single-grid-container {
     height: 600px;
     width: 100%;
@@ -76,7 +74,6 @@ const entryFields = {
   pol: "POL",
   pod: "POD",
   fpod: "FPOD",
-  containerNo: "Container No",
   volume: "Volume",
   vessel: "Vessel",
   voyage: "Voyage",
@@ -87,8 +84,10 @@ const entryFields = {
   siFiled: "SI Filed",
   firstPrinted: "First Print",
   correctionsFinalised: "Corrections Finalised",
+  linerInvoice: "Liner Invoice",
   blReleased: "B/L Released",
   referenceNo: "Reference NO",
+  blType: "BL Type",
 };
 
 function Entries() {
@@ -124,9 +123,18 @@ function Entries() {
   const [rowForSob, setRowForSob] = useState(null);
   const [sobConfirmDialogOpen, setSobConfirmDialogOpen] = useState(false);
   const [sobResult, setSobResult] = useState(null);
-  const [containerNoDialogOpen, setContainerNoDialogOpen] = useState(false);
   const [sobMissingDialogOpen, setSobMissingDialogOpen] = useState(false);
   const [sobMissingFields, setSobMissingFields] = useState([]);
+  const [mailStatusDialogOpen, setMailStatusDialogOpen] = useState(false);
+  const [mailStatus, setMailStatus] = useState({ success: false, message: "" });
+  const [blTypeDialogOpen, setBlTypeDialogOpen] = useState(false);
+  const [selectedBlType, setSelectedBlType] = useState("");
+  const [rowForBlType, setRowForBlType] = useState(null);
+  const [customers, setCustomers] = useState({}); // customerId -> customer data
+
+  const gridContainerRef = useRef(null);
+  let touchStartX = null;
+  let touchStartY = null;
 
   const formatCutOffInput = (value) => {
     if (!value) return "";
@@ -244,15 +252,26 @@ function Entries() {
   const applyFilters = () => {
     let filtered = [...entries];
 
+    // Apply nomination filter when NOMINATION is active
+    if (activeLocationFilter === "NOMINATION") {
+      filtered = filtered.filter((entry) => entry.isNominated === true);
+    } else if (selectedLocations.length > 0) {
+      filtered = filtered.filter((entry) => selectedLocations.includes(entry.location));
+    }
+
     if (searchQuery) {
       const tokens = parseAdvancedQuery(searchQuery);
       filtered = filtered.filter((entry) => {
         return tokens.every(token => {
           const textFields = [
             "location", "customer", "line", "pol", "pod", "fpod", "vessel",
-            "bookingNo", "containerNo", "volume", "voyage", "blNo", "equipmentType",
+            "bookingNo", "voyage", "blNo",
             "portCutOff", "siCutOff", "salesPersonName"
           ];
+          const equipmentTextMatch = Array.isArray(entry.equipmentDetails) && entry.equipmentDetails.some(eq => 
+            (eq.containerNo && eq.containerNo.toString().toLowerCase().includes(token)) ||
+            (eq.equipmentType && eq.equipmentType.toString().toLowerCase().includes(token))
+          );
           const textMatch = textFields.some(field => {
             const value = typeof entry[field] === 'object' ? entry[field]?.name : entry[field];
             return value && value.toString().toLowerCase().includes(token);
@@ -266,7 +285,7 @@ function Entries() {
 
           const booleanFields = [
             "vgmFiled", "siFiled", "finalDG", "firstPrinted", "correctionsFinalised",
-            "blReleased", "isfSent", "sob"
+            "linerInvoice", "blReleased", "isfSent", "sob"
           ];
           const booleanMatch = booleanFields.some(field => {
             if (token === "yes" || token === "true" || token === "filed") {
@@ -278,13 +297,9 @@ function Entries() {
             return false;
           });
 
-          return textMatch || dateMatch || booleanMatch;
+          return textMatch || dateMatch || booleanMatch || equipmentTextMatch;
         });
       });
-    }
-
-    if (selectedLocations.length > 0) {
-      filtered = filtered.filter((entry) => selectedLocations.includes(entry.location));
     }
 
     filtered = applySorting(filtered, sortModel);
@@ -294,73 +309,39 @@ function Entries() {
 
   useEffect(() => {
     applyFilters();
-  }, [entries, searchQuery, selectedLocations, sortModel]);
+  }, [entries, searchQuery, selectedLocations, sortModel, activeLocationFilter]);
 
   useEffect(() => {
     const fetchEntries = async () => {
       const querySnapshot = await getDocs(collection(db, "entries"));
       const entryList = [];
-      const locationSet = new Set();
-
-      const customerDoc = await getDoc(doc(db, "newMaster", "customer"));
-      const customerMasterList = customerDoc.exists() ? customerDoc.data().list || [] : [];
 
       querySnapshot.forEach((docSnap) => {
         const entryData = { ...docSnap.data(), id: docSnap.id };
-        let customerObj = entryData.customer;
-        if (typeof customerObj === 'string') {
-          customerObj = customerMasterList.find(item => item.name === customerObj) || { 
-            name: customerObj, 
-            salesPerson: "", 
-            customerEmail: "", 
-            salesPersonEmail: ""
-          };
-        }
-
-        // Extract containerNo from equipmentDetails if present
-        let containerNo = "";
-        if (Array.isArray(entryData.equipmentDetails)) {
-          containerNo = entryData.equipmentDetails
-            .map(eq => eq.containerNo)
-            .filter(Boolean)
-            .join(', ');
-        } else if (Array.isArray(entryData.containerNo)) {
-          containerNo = entryData.containerNo.join(', ');
-        } else {
-          containerNo = entryData.containerNo || "";
-        }
-
         entryList.push({
-          id: docSnap.id,
           ...entryData,
+          customerId: entryData.customerId || "",
           location: entryData.location?.name || entryData.location || "",
-          customer: customerObj,
-          salesPersonName: customerObj?.salesPerson || "",
-          customerEmail: customerObj?.customerEmail || "",
-          salesPersonEmail: customerObj?.salesPersonEmail || "",
+          salesPersonName: entryData.salesPersonName || "",
           line: entryData.line?.name || entryData.line || "",
           pol: entryData.pol?.name || entryData.pol || "",
           pod: entryData.pod?.name || entryData.pod || "",
           fpod: entryData.fpod?.name || entryData.fpod || "",
           vessel: entryData.vessel?.name || entryData.vessel || "",
-          equipmentType: entryData.equipmentType?.type || entryData.equipmentType || "",
           volume: Array.isArray(entryData.volume) ? entryData.volume.join(', ') : entryData.volume || "",
-          containerNo: containerNo,
           isfSent: entryData.isfSent || false,
           sob: entryData.sob || false,
           sobDate: entryData.sobDate || "",
           finalDG: entryData.finalDG || false,
           blNo: entryData.blNo || "",
-          invoiceNo: ""
+          linerInvoice: entryData.linerInvoice || false,
+          invoiceNo: "",
+          isNominated: entryData.isNominated || false
         });
-
-        if (entryData.location) {
-          locationSet.add(entryData.location);
-        }
       });
 
       setEntries(entryList);
-      setLocations([...locationSet]);
+      setFilteredEntries(entryList);
     };
 
     const fetchMasterData = async () => {
@@ -390,8 +371,18 @@ function Entries() {
       setFpodMaster(newMasterData.fpod);
     };
 
+    const fetchCustomers = async () => {
+      const customerSnapshot = await getDocs(collection(db, "customers"));
+      const customerMap = {};
+      customerSnapshot.forEach(docSnap => {
+        customerMap[docSnap.id] = { id: docSnap.id, ...docSnap.data() };
+      });
+      setCustomers(customerMap);
+    };
+
     fetchEntries();
     fetchMasterData();
+    fetchCustomers();
   }, []);
 
   const handleQuickSort = (field, direction) => {
@@ -405,7 +396,7 @@ function Entries() {
 
   const handleLocationButtonFilter = (location) => {
     setActiveLocationFilter(location);
-    if (location === "SEE ALL") {
+    if (location === "SEE ALL" || location === "NOMINATION") {
       setSelectedLocations([]);
     } else {
       setSelectedLocations([location]);
@@ -459,8 +450,6 @@ function Entries() {
         salesPersonEmail: customerData.salesPersonEmail || "",
         volume: fixConcatenatedData(typeof newRow.volume === 'string' && newRow.volume.includes(',') ? 
                 newRow.volume.split(',').map(v => v.trim()).join(', ') : newRow.volume),
-        containerNo: fixConcatenatedData(typeof newRow.containerNo === 'string' && newRow.containerNo.includes(',') ? 
-                     newRow.containerNo.split(',').map(c => c.trim()).join(', ') : newRow.containerNo)
       };
 
       const portCutOffChanged = oldRow.portCutOff !== formattedPortCutOff;
@@ -509,6 +498,7 @@ function Entries() {
         delete updateData.salesPersonName;
         delete updateData.customerEmail;
         delete updateData.salesPersonEmail;
+        delete updateData.containerNoDisplay;
         batchUpdates.push(updateDoc(docRef, updateData));
 
         await Promise.all(batchUpdates);
@@ -527,6 +517,7 @@ function Entries() {
         delete updateData.salesPersonName;
         delete updateData.customerEmail;
         delete updateData.salesPersonEmail;
+        delete updateData.containerNoDisplay;
         await updateDoc(docRef, updateData);
         toast.success("Row updated successfully!");
       }
@@ -555,8 +546,10 @@ function Entries() {
             value = entry.customer?.salesPerson || "";
           } else if (['bookingDate', 'bookingValidity', 'etd', 'sobDate'].includes(column.field)) {
             value = formatDate(value);
-          } else if (['vgmFiled', 'siFiled', 'finalDG', 'firstPrinted', 'isfSent', 'sob', 'correctionsFinalised', 'blReleased'].includes(column.field)) {
+          } else if (['vgmFiled', 'siFiled', 'finalDG', 'firstPrinted', 'correctionsFinalised', 'linerInvoice', 'blReleased', 'isfSent', 'sob'].includes(column.field)) {
             value = value ? "Yes" : "No";
+          } else if (column.field === 'containerNoDisplay') {
+            value = entry.containerNoDisplay || "";
           }
           row[column.headerName] = value || "";
         }
@@ -576,6 +569,7 @@ function Entries() {
     "finalDG",
     "firstPrinted",
     "correctionsFinalised",
+    "linerInvoice",
     "blReleased",
     "isfSent",
     "sob"
@@ -585,7 +579,8 @@ function Entries() {
     "vgmFiled",
     "siFiled",
     "firstPrinted",
-    "correctionsFinalised"
+    "correctionsFinalised",
+    "linerInvoice"
   ];
 
   const masterFields = [
@@ -595,49 +590,36 @@ function Entries() {
     "pol",
     "pod",
     "fpod",
-    "vessel",
-    "equipmentType"
+    "vessel"
   ];
 
-  const allColumns = [
-    ...(activeLocationFilter === "SEE ALL" ? [{
+  let allColumns = [
+    ...(activeLocationFilter === "SEE ALL" || activeLocationFilter === "NOMINATION" ? [{
       field: "location",
       headerName: "Location",
-      flex: 0.7,
-      minWidth: 120,
-      maxWidth: 180,
       editable: true,
       type: "singleSelect",
       valueOptions: masterData.location,
       renderCell: (params) => params.value || ""
     }] : []),
     {
-      field: "customer",
+      field: "customerId",
       headerName: "Customer",
-      flex: 1,
-      minWidth: 150,
-      maxWidth: 300,
       editable: true,
       type: "singleSelect",
-      valueOptions: masterData.customer,
+      valueOptions: Object.values(customers).map(c => ({ value: c.id, label: c.name })),
       valueParser: (value) => value,
-      renderCell: (params) => params.value?.name || params.value || ""
+      renderCell: (params) => customers[params.value]?.name || "",
     },
     {
       field: "salesPersonName",
       headerName: "Sales",
-      flex: 1,
-      minWidth: 140,
-      maxWidth: 250,
       editable: false,
       renderCell: (params) => params.value || ""
     },
     {
       field: "line",
       headerName: "Line",
-      flex: 0.7,
-      minWidth: 120,
-      maxWidth: 200,
       editable: true,
       type: "singleSelect",
       valueOptions: masterData.line,
@@ -646,59 +628,62 @@ function Entries() {
     {
       field: "referenceNo",
       headerName: "Reference NO",
-      flex: 0.8,
-      minWidth: 120,
-      maxWidth: 200,
       editable: true,
       renderCell: (params) => params.value || ""
     },
     {
       field: "bookingNo",
       headerName: "Booking No",
-      flex: 0.9,
-      minWidth: 140,
-      maxWidth: 250,
       editable: true,
       renderCell: (params) => params.value || ""
     },
-    ...Object.keys(entryFields).filter(key => !['customer', 'salesPersonName', 'line', 'referenceNo', 'bookingNo', 'location'].includes(key)).map((key) => {
+    {
+      field: "containerNoDisplay",
+      headerName: "Container No",
+      editable: true,
+      renderCell: (params) => params.value || "",
+      valueSetter: (value, row) => {
+        const newEquipmentDetails = Array.isArray(row.equipmentDetails)
+          ? [...row.equipmentDetails]
+          : [{ containerNo: "", equipmentType: "", qty: "1" }];
+        newEquipmentDetails[0] = {
+          ...newEquipmentDetails[0],
+          containerNo: value
+        };
+        return { ...row, equipmentDetails: newEquipmentDetails, containerNoDisplay: value };
+      }
+    },
+    ...Object.keys(entryFields).filter(key => !['customer', 'salesPersonName', 'line', 'referenceNo', 'bookingNo', 'location', 'containerNo', 'equipmentType'].includes(key)).map((key) => {
       const isMasterField = masterFields.includes(key);
       const isBooleanField = booleanFields.includes(key);
       const isDateField = ["bookingDate", "bookingValidity", "etd"].includes(key);
       
-      // Set responsive sizing based on content type
-      let flex, minWidth, maxWidth;
-      
+      let flex;
       if (key === "salesPersonName") {
-        flex = 1; minWidth = 140; maxWidth = 250;
+        flex = 1;
       } else if (isDateField) {
-        flex = 0.8; minWidth = 120; maxWidth = 160;
+        flex = 0.8;
       } else if (isBooleanField) {
-        flex = 0.5; minWidth = 80; maxWidth = 120;
-      } else if (key === "containerNo") {
-        flex = 1.5; minWidth = 180; maxWidth = 400;
+        flex = 0.5;
       } else if (key === "volume") {
-        flex = 1.2; minWidth = 160; maxWidth = 300;
+        flex = 1.2;
       } else if (key === "vessel") {
-        flex = 1; minWidth = 140; maxWidth = 220;
+        flex = 1;
       } else if (key === "voyage") {
-        flex = 0.6; minWidth = 100; maxWidth = 150;
+        flex = 0.6;
       } else if (key === "portCutOff" || key === "siCutOff") {
-        flex = 1; minWidth = 140; maxWidth = 200;
+        flex = 1;
       } else if (key === "pol" || key === "pod") {
-        flex = 0.8; minWidth = 120; maxWidth = 180;
+        flex = 0.8;
       } else if (key === "fpod") {
-        flex = 1; minWidth = 150; maxWidth = 250;
+        flex = 1;
       } else {
-        flex = 0.8; minWidth = 120; maxWidth = 200;
+        flex = 0.8;
       }
       
       return {
         field: key,
         headerName: entryFields[key],
-        flex: flex,
-        minWidth: minWidth,
-        maxWidth: maxWidth,
         editable: key !== "salesPersonName",
         ...(isMasterField && {
           type: "singleSelect",
@@ -807,7 +792,7 @@ function Entries() {
           if (key === "salesPersonName") {
             return params.row.customer?.salesPerson || "";
           }
-          if (key === "volume" || key === "containerNo") {
+          if (key === "volume") {
             const value = params.value || "";
             if (typeof value === 'string' && value.includes(',')) {
               return value.split(',').map(v => v.trim()).join(', ');
@@ -820,104 +805,117 @@ function Entries() {
     })
   ];
 
-  const siFiledIndex = allColumns.findIndex((col) => col.field === "siFiled");
-  if (siFiledIndex !== -1) {
-    allColumns.splice(siFiledIndex + 1, 0, {
-      field: "finalDG",
-      headerName: "FINAL DG",
-      flex: 0.4,
-      minWidth: 70,
-      maxWidth: 100,
-      editable: true,
-      renderCell: (params) => {
-        const volume = params.row.volume || "";
-        if (volume.toUpperCase().includes("HAZ")) {
-          return (
-            <Checkbox
-              checked={!!params.row.finalDG}
-              onChange={(e) =>
-                handleCheckboxEdit(params.row, "finalDG", e.target.checked)
-              }
-              color="primary"
-              size="small"
-            />
-          );
-        } else {
-          return null;
+  if (!allColumns.some(col => col.field === "finalDG")) {
+    const siFiledIndex = allColumns.findIndex((col) => col.field === "siFiled");
+    if (siFiledIndex !== -1) {
+      allColumns.splice(siFiledIndex + 1, 0, {
+        field: "finalDG",
+        headerName: "FINAL DG",
+        editable: true,
+        renderCell: (params) => {
+          const volume = params.row.volume || "";
+          if (volume.toUpperCase().includes("HAZ")) {
+            return (
+              <Checkbox
+                checked={!!params.row.finalDG}
+                onChange={(e) => handleCheckboxEdit(params.row, "finalDG", e.target.checked)}
+                color="primary"
+                size="small"
+              />
+            );
+          } else {
+            return null;
+          }
         }
-      }
-    });
+      });
+    }
   }
 
   if (fpodMaster.length > 0) {
+    const correctionsFinalisedIndex = allColumns.findIndex((col) => col.field === "correctionsFinalised");
+    if (!allColumns.some(col => col.field === "linerInvoice")) {
+      allColumns.splice(correctionsFinalisedIndex + 1, 0, {
+        field: "linerInvoice",
+        headerName: "LINER INVOICE",
+        editable: true,
+        renderCell: (params) => (
+          <Checkbox
+            checked={!!params.row.linerInvoice}
+            onChange={(e) => handleCheckboxEdit(params.row, "linerInvoice", e.target.checked)}
+            color="primary"
+            size="small"
+          />
+        )
+      });
+    }
+
     const firstPrintedIndex = allColumns.findIndex((col) => col.field === "firstPrinted");
-    allColumns.splice(firstPrintedIndex + 1, 0, {
-      field: "isfSent",
-      headerName: "ISF SENT",
-      flex: 0.4,
-      minWidth: 70,
-      maxWidth: 100,
-      editable: true,
-      renderCell: (params) => {
-        const entryFpod = params.row.fpod || "";
-        const matchingFpod = fpodMaster.find(
-          (fpod) => fpod.toUpperCase() === entryFpod.toUpperCase()
-        );
-
-        if (
-          (matchingFpod && matchingFpod.toUpperCase().includes("USA")) ||
-          entryFpod.toUpperCase().includes("USA")
-        ) {
-          return (
-            <Checkbox
-              checked={!!params.row.isfSent}
-              onChange={(e) =>
-                handleCheckboxEdit(params.row, "isfSent", e.target.checked)
-              }
-              color="primary"
-              size="small"
-            />
+    if (!allColumns.some(col => col.field === "isfSent")) {
+      allColumns.splice(firstPrintedIndex + 1, 0, {
+        field: "isfSent",
+        headerName: "ISF SENT",
+        editable: true,
+        renderCell: (params) => {
+          const entryFpod = params.row.fpod || "";
+          const matchingFpod = fpodMaster.find(
+            (fpod) => fpod.toUpperCase() === entryFpod.toUpperCase()
           );
-        } else {
-          return null;
-        }
-      }
-    });
 
-    allColumns.splice(firstPrintedIndex + 2, 0, {
-      field: "sob",
-      headerName: "SOB",
-      flex: 0.3,
-      minWidth: 60,
-      maxWidth: 80,
-      editable: true,
-      renderCell: (params) => (
-        <Checkbox
-          checked={!!params.row.sob}
-          onChange={(e) => handleSobCheckbox(params.row, e.target.checked)}
-          color="primary"
-          disabled={params.row.sob}
-          size="small"
-        />
-      )
-    });
+          if (
+            (matchingFpod && matchingFpod.toUpperCase().includes("USA")) ||
+            entryFpod.toUpperCase().includes("USA")
+          ) {
+            return (
+              <Checkbox
+                checked={!!params.row.isfSent}
+                onChange={(e) => handleCheckboxEdit(params.row, "isfSent", e.target.checked)}
+                color="primary"
+                size="small"
+              />
+            );
+          } else {
+            return null;
+          }
+        }
+      });
+
+      allColumns.splice(firstPrintedIndex + 2, 0, {
+        field: "sob",
+        headerName: "SOB",
+        editable: true,
+        renderCell: (params) => (
+          <Checkbox
+            checked={!!params.row.sob}
+            onChange={(e) => handleSobCheckbox(params.row, e.target.checked)}
+            color="primary"
+            size="small"
+          />
+        )
+      });
+    }
+  }
+
+  if (!allColumns.some(col => col.field === "blType")) {
+    const blReleasedIndex = allColumns.findIndex((col) => col.field === "blReleased");
+    if (blReleasedIndex !== -1) {
+      allColumns.splice(blReleasedIndex + 1, 0, {
+        field: "blType",
+        headerName: "BL Type",
+        editable: false,
+        renderCell: (params) => params.value || ""
+      });
+    }
   }
 
   allColumns.push({
     field: "blNo",
     headerName: "BL No",
-    flex: 0.7,
-    minWidth: 100,
-    maxWidth: 150,
     editable: true
   });
 
   allColumns.push({
     field: "actions",
     headerName: "Actions",
-    flex: 0.3,
-    minWidth: 60,
-    maxWidth: 80,
     sortable: false,
     filterable: false,
     renderCell: (params) => (
@@ -960,32 +958,36 @@ function Entries() {
 
   const handleSobCheckbox = (row, checked) => {
     if (checked) {
-      const missingFields = [];
-      const containerNo = row.containerNo;
-      if (!containerNo || containerNo.trim() === "") {
-        missingFields.push("Container No");
+      // Check if containerNo, voyage, vgmFiled, and siFiled are empty
+      let containerNo = Array.isArray(row.equipmentDetails)
+        ? row.equipmentDetails.map(eq => eq.containerNo).join(',').trim()
+        : '';
+      let voyage = (row.voyage || '').trim();
+      let vgmFiled = row.vgmFiled;
+      let siFiled = row.siFiled;
+      if (!containerNo) {
+        toast.error("Please fill the Container No in Equipment Details before checking SOB.");
+        return;
       }
-      if (row.hasOwnProperty('vgmFiled') && !row.vgmFiled) missingFields.push("VGM Filed");
-      if (row.hasOwnProperty('siFiled') && !row.siFiled) missingFields.push("SI Filed");
-      // Only check Final DG if volume contains HAZ (case-insensitive)
-      if (row.hasOwnProperty('finalDG') && String(row.volume || '').toUpperCase().includes('HAZ') && !row.finalDG) {
-        missingFields.push("Final DG");
+      if (!voyage) {
+        toast.error("Please fill the Voyage before checking SOB.");
+        return;
       }
-      // Only check ISF Sent if FPOD/country contains USA
-      if (row.hasOwnProperty('isfSent')) {
-        const fpod = String(row.fpod || '');
-        if (fpod.toUpperCase().includes('USA') && !row.isfSent) {
-          missingFields.push("ISF Sent");
-        }
+      if (!vgmFiled) {
+        toast.error("Please mark VGM Filed before checking SOB.");
+        return;
       }
-      if (missingFields.length > 0) {
-        setSobMissingFields(missingFields);
-        setSobMissingDialogOpen(true);
+      if (!siFiled) {
+        toast.error("Please mark SI Filed before checking SOB.");
         return;
       }
       setRowForSob(row);
-      setSobDateInput("");
       setSobDialogOpen(true);
+    } else {
+      const newRow = { ...row, sob: false, sobDate: "" };
+      handleProcessRowUpdate(newRow, row).then(() => {
+        toast.info("SOB unchecked");
+      });
     }
   };
 
@@ -994,46 +996,27 @@ function Entries() {
       toast.error("Please select a date for SOB.");
       return;
     }
-
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
     if (!dateRegex.test(sobDateInput)) {
       toast.error("Invalid date format. Please use YYYY-MM-DD format.");
       return;
     }
-
     setSobDialogOpen(false);
-    
-    // Show confirmation dialog with processing message
-    setSobResult({
-      date: formatDate(sobDateInput),
-      processing: true,
-      emailSent: false,
-      emailError: null
-    });
-    setSobConfirmDialogOpen(true);
-
     const formattedSobDate = formatDate(sobDateInput);
+    let isUpdate = rowForSob && rowForSob.sob && rowForSob.sobDate;
     const newRow = { ...rowForSob, sob: true, sobDate: formattedSobDate };
-
     try {
-      // Update Firestore first
       await handleProcessRowUpdate(newRow, rowForSob);
-      
-      // Update result to show database update success
-      setSobResult(prev => ({
-        ...prev,
-        processing: false,
-        databaseUpdated: true
-      }));
-
-      // Try to send email via Python API
+      if (isUpdate) {
+        toast.success("SOB date updated");
+      } else {
+        toast.success("SOB checked, date added");
+      }
       if (newRow.customerEmail && newRow.salesPersonEmail) {
         try {
-          // Ensure container_no is a string
-          const containerNo = Array.isArray(newRow.containerNo) 
-            ? newRow.containerNo.join(', ') 
-            : newRow.containerNo || '';
-
+          const containerNo = Array.isArray(newRow.equipmentDetails) 
+            ? newRow.equipmentDetails.map(eq => eq.containerNo).join(', ') 
+            : '';
           const emailData = {
             customer_email: newRow.customerEmail,
             sales_person_email: newRow.salesPersonEmail,
@@ -1049,30 +1032,17 @@ function Entries() {
             volume: newRow.volume,
             bl_no: newRow.blNo || ''
           };
-
-          console.log("Sending emailData:", emailData);
-          
-          // Check if all required fields are present
           const requiredFields = ['customer_email', 'sales_person_email', 'customer_name', 'booking_no'];
           const missingFields = requiredFields.filter(field => !emailData[field]);
-          
           if (missingFields.length > 0) {
             throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
           }
-
-          await axios.post('http://localhost:5000/api/send-sob-email', emailData, {
-            timeout: 10000 // 10 second timeout
+          await axios.post('https://booking-email-backend.onrender.com/api/send-sob-email', emailData, {
+            timeout: 10000
           });
-          
-          setSobResult(prev => ({
-            ...prev,
-            emailSent: true
-          }));
-          
+          setMailStatus({ success: true, message: "Mail sent successfully." });
         } catch (emailError) {
-          console.error("Email sending error:", emailError);
           let errorMessage = "Unknown error occurred";
-          
           if (emailError.code === 'ECONNREFUSED') {
             errorMessage = "Email service not available (connection refused)";
           } else if (emailError.code === 'ETIMEDOUT') {
@@ -1084,36 +1054,13 @@ function Entries() {
           } else {
             errorMessage = emailError.message;
           }
-          
-          setSobResult(prev => ({
-            ...prev,
-            emailSent: false,
-            emailError: errorMessage
-          }));
+          setMailStatus({ success: false, message: "Mail not sent: " + errorMessage });
         }
-      } else {
-        const missingEmails = [];
-        if (!newRow.customerEmail) missingEmails.push("customer email");
-        if (!newRow.salesPersonEmail) missingEmails.push("salesperson email");
-        
-        setSobResult(prev => ({
-          ...prev,
-          emailSent: false,
-          emailError: `Missing ${missingEmails.join(' and ')} in customer master data`
-        }));
+        setMailStatusDialogOpen(true);
       }
-
-    } catch (error) {
-      console.error("Error processing SOB: ", error);
-      setSobResult(prev => ({
-        ...prev,
-        processing: false,
-        databaseUpdated: false,
-        emailSent: false,
-        emailError: "Failed to update database"
-      }));
+    } catch (e) {
+      toast.error("Failed to update SOB date");
     }
-
     setRowForSob(null);
     setSobDateInput("");
   };
@@ -1130,9 +1077,32 @@ function Entries() {
   };
 
   const handleCheckboxEdit = async (row, field, value) => {
+    if (field === "siFiled" && value) {
+      setRowForBlType(row);
+      setBlTypeDialogOpen(true);
+      return;
+    }
     if (field === "firstPrinted" && value) {
+      if (!row.siFiled) {
+        toast.error("Please tick SI Filed before First Print.");
+        return;
+      }
       setCurrentRow(row);
       setOpenDialog(true);
+    } else if (field === "correctionsFinalised" && value) {
+      if (!row.firstPrinted) {
+        toast.error("Please tick First Print before Corrections Finalised.");
+        return;
+      }
+      const newRow = { ...row, [field]: value };
+      await handleProcessRowUpdate(newRow, row);
+    } else if (field === "linerInvoice" && value) {
+      if (!row.correctionsFinalised) {
+        toast.error("Please tick Corrections Finalised before Liner Invoice.");
+        return;
+      }
+      const newRow = { ...row, [field]: value };
+      await handleProcessRowUpdate(newRow, row);
     } else if (field === "blReleased" && value) {
       const fieldsToCheck = [...prerequisiteFields];
       const entryFpod = row.fpod || "";
@@ -1163,6 +1133,24 @@ function Entries() {
     }
   };
 
+  const handleBlTypeDialogSubmit = async () => {
+    if (!selectedBlType) {
+      toast.error("Please select BL Type");
+      return;
+    }
+    const newRow = { ...rowForBlType, siFiled: true, blType: selectedBlType };
+    await handleProcessRowUpdate(newRow, rowForBlType);
+    setSelectedBlType("");
+    setRowForBlType(null);
+    setBlTypeDialogOpen(false);
+  };
+
+  const handleBlTypeDialogClose = () => {
+    setSelectedBlType("");
+    setRowForBlType(null);
+    setBlTypeDialogOpen(false);
+  };
+
   const handleConfirmComplete = async () => {
     if (!rowToComplete) return;
 
@@ -1178,6 +1166,7 @@ function Entries() {
       delete entryData.salesPersonName;
       delete entryData.customerEmail;
       delete entryData.salesPersonEmail;
+      delete entryData.containerNoDisplay;
       await addDoc(collection(db, "completedFiles"), entryData);
       await deleteDoc(doc(db, "entries", updatedRow.id));
 
@@ -1232,13 +1221,30 @@ function Entries() {
     return !row.portCutOff && !row.siCutOff ? "highlight-row" : "";
   };
 
+  const handleTouchStart = (e) => {
+    if (e.touches.length === 1) {
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+    }
+  };
+
+  const handleTouchMove = (e) => {
+    if (touchStartX !== null && touchStartY !== null && e.touches.length === 1) {
+      const dx = e.touches[0].clientX - touchStartX;
+      const dy = e.touches[0].clientY - touchStartY;
+      if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 10) {
+        e.preventDefault();
+      }
+    }
+  };
+
   return (
     <div className="container mt-4">
       <style>{styles}</style>
       <h2 className="mb-4 text-center">Booking Entries</h2>
 
       <Box sx={{ mb: 3, display: 'flex', justifyContent: 'center', gap: 1 }}>
-        {["MUMBAI", "GUJARAT", "SEE ALL"].map((location) => (
+        {["MUMBAI", "GUJARAT", "SEE ALL", "NOMINATION"].map((location) => (
           <button
             key={location}
             className={`location-button ${activeLocationFilter === location ? 'active' : ''}`}
@@ -1319,7 +1325,7 @@ function Entries() {
         </Button>
       </div>
 
-      {activeLocationFilter === "SEE ALL" && (
+      {(activeLocationFilter === "SEE ALL" || activeLocationFilter === "NOMINATION") && (
         <div className="mb-3">
           <label className="form-label">Filter by Location:</label>
           <div>
@@ -1340,12 +1346,28 @@ function Entries() {
         </div>
       )}
 
-      <div className="single-grid-container">
+      <div
+        className="single-grid-container"
+        ref={gridContainerRef}
+        onWheel={e => {
+          if (Math.abs(e.deltaX) > 0 && Math.abs(e.deltaY) > 0) {
+            if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+              e.currentTarget.scrollTop += 0;
+              e.currentTarget.scrollLeft += e.deltaX;
+              e.preventDefault();
+            } else {
+              e.currentTarget.scrollLeft += 0;
+              e.currentTarget.scrollTop += e.deltaY;
+              e.preventDefault();
+            }
+          }
+        }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+      >
         <DataGrid
           rows={filteredEntries}
           columns={allColumns}
-          pageSize={10}
-          rowsPerPageOptions={[5, 10, 20, 50]}
           checkboxSelection
           disableSelectionOnClick
           getRowClassName={getRowClassName}
@@ -1359,15 +1381,13 @@ function Entries() {
           disableColumnMenu={false}
           rowHeight={52}
           autoHeight={false}
-          // Enable column resizing
           disableColumnResize={false}
+          pagination={false}
           sx={{
             height: '100%',
             width: '100%',
             border: 'none',
-            // Disable diagonal scrolling by preventing scroll coupling
             '& .MuiDataGrid-virtualScroller': {
-              // Allow normal scrolling but prevent diagonal scroll
               '&::-webkit-scrollbar': {
                 height: '12px',
                 width: '12px',
@@ -1382,8 +1402,20 @@ function Entries() {
               '&::-webkit-scrollbar-thumb:hover': {
                 backgroundColor: '#555',
               },
-              // Prevent simultaneous horizontal and vertical scrolling
-              scrollBehavior: 'auto',
+              onWheel: (e) => {
+                const el = e.currentTarget;
+                if (Math.abs(e.deltaX) > 0 && Math.abs(e.deltaY) > 0) {
+                  if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+                    el.scrollTop += 0;
+                    el.scrollLeft += e.deltaX;
+                    e.preventDefault();
+                  } else {
+                    el.scrollLeft += 0;
+                    el.scrollTop += e.deltaY;
+                    e.preventDefault();
+                  }
+                }
+              },
             },
             '& .MuiDataGrid-columnHeaders': {
               backgroundColor: '#f8f9fa',
@@ -1431,7 +1463,6 @@ function Entries() {
         />
       </div>
 
-      {/* BL No Input Dialog */}
       <Dialog open={openDialog} onClose={handleDialogClose}>
         <DialogTitle>Enter BL No</DialogTitle>
         <DialogContent>
@@ -1451,7 +1482,6 @@ function Entries() {
         </DialogActions>
       </Dialog>
 
-      {/* SOB Date Input Dialog */}
       <Dialog open={sobDialogOpen} onClose={handleSobCancel}>
         <DialogTitle>Enter SOB Date</DialogTitle>
         <DialogContent>
@@ -1472,7 +1502,6 @@ function Entries() {
         </DialogActions>
       </Dialog>
 
-      {/* SOB Confirmation Dialog */}
       <Dialog 
         open={sobConfirmDialogOpen} 
         onClose={handleSobConfirmClose}
@@ -1540,7 +1569,6 @@ function Entries() {
         </DialogActions>
       </Dialog>
 
-      {/* B/L Release Confirmation Dialog */}
       <Dialog open={confirmDialogOpen} onClose={handleCancelComplete}>
         <DialogTitle>Confirm B/L Release</DialogTitle>
         <DialogContent>
@@ -1554,7 +1582,6 @@ function Entries() {
         </DialogActions>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
       <Dialog open={deleteDialogOpen} onClose={handleDeleteCancel}>
         <DialogTitle>Confirm Deletion</DialogTitle>
         <DialogContent>
@@ -1568,20 +1595,6 @@ function Entries() {
         </DialogActions>
       </Dialog>
 
-      {/* Container Number Required Dialog */}
-      <Dialog open={containerNoDialogOpen} onClose={() => setContainerNoDialogOpen(false)}>
-        <DialogTitle>Container Number Required</DialogTitle>
-        <DialogContent>
-          Please enter the container number first before marking SOB.
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setContainerNoDialogOpen(false)} color="primary" autoFocus>
-            OK
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* SOB Missing Fields Dialog */}
       <Dialog open={sobMissingDialogOpen} onClose={() => setSobMissingDialogOpen(false)}>
         <DialogTitle>Fields Remaining</DialogTitle>
         <DialogContent>
@@ -1594,6 +1607,44 @@ function Entries() {
           <Button onClick={() => setSobMissingDialogOpen(false)} color="primary" autoFocus>
             OK
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={mailStatusDialogOpen} onClose={() => setMailStatusDialogOpen(false)}>
+        <DialogTitle>Mail Status</DialogTitle>
+        <DialogContent>
+          <div style={{ color: mailStatus.success ? '#388e3c' : '#d32f2f', fontWeight: 500, fontSize: 16 }}>
+            {mailStatus.message}
+          </div>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setMailStatusDialogOpen(false)} color="primary" autoFocus>
+            OK
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={blTypeDialogOpen} onClose={handleBlTypeDialogClose}>
+        <DialogTitle>Select BL Type</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+            <Button
+              variant={selectedBlType === 'OBL' ? 'contained' : 'outlined'}
+              onClick={() => setSelectedBlType('OBL')}
+            >
+              OBL
+            </Button>
+            <Button
+              variant={selectedBlType === 'SEAWAY' ? 'contained' : 'outlined'}
+              onClick={() => setSelectedBlType('SEAWAY')}
+            >
+              SEAWAY
+            </Button>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleBlTypeDialogClose}>Cancel</Button>
+          <Button onClick={handleBlTypeDialogSubmit} disabled={!selectedBlType}>Submit</Button>
         </DialogActions>
       </Dialog>
     </div>

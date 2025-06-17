@@ -6,12 +6,12 @@ import { toast } from "react-toastify";
 
 const Dashboard = () => {
   const [dashboardData, setDashboardData] = useState({
-    shippedThisWeek: 0,
-    notCompleted: 0,
-    totalShipments: 0,
     pendingSI: 0,
-    pendingBLRelease: 0,
-    pendingFinalDG: 0
+    pendingFirstPrint: 0,
+    pendingCorrection: 0,
+    pendingBL: 0,
+    pendingInvoice: 0,
+    pendingDG: 0
   });
   const [shipmentsByDate, setShipmentsByDate] = useState([]);
   const [shipmentsByShipper, setShipmentsByShipper] = useState([]);
@@ -201,31 +201,39 @@ const Dashboard = () => {
         return etdDate >= startDate && etdDate <= endDate;
       }).length;
 
+      // Only active entries for pending calculations
       const activeEntries = allEntries.filter(entry => {
         if (selectedLocation !== 'All' && entry.location !== selectedLocation) return false;
         return entry.status === 'active';
       });
-
-      const notCompleted = activeEntries.filter(entry => !entry.blReleased).length;
-      
-      // NEW PENDING COUNTERS
+      // PENDING SI: siFiled is unchecked/false
       const pendingSI = activeEntries.filter(entry => !entry.siFiled).length;
-      const pendingBLRelease = activeEntries.filter(entry => entry.sob === true && !entry.blReleased).length;
-      // For Final DG - only count entries with HAZ volume
-      const pendingFinalDG = activeEntries.filter(entry => {
+      // PENDING FIRST PRINT: siFiled checked, firstPrinted unchecked
+      const pendingFirstPrint = activeEntries.filter(entry => entry.siFiled && !entry.firstPrinted).length;
+      // PENDING CORRECTION: firstPrinted checked, correctionsFinalised unchecked
+      const pendingCorrection = activeEntries.filter(entry => entry.firstPrinted && !entry.correctionsFinalised).length;
+      // PENDING BL: correctionsFinalised checked, blReleased unchecked
+      const pendingBL = activeEntries.filter(entry => entry.correctionsFinalised && !entry.blReleased).length;
+      // PENDING INVOICE: if record's invoiceDueDate (or etd if not present) is before today
+      const today = new Date();
+      const pendingInvoice = activeEntries.filter(entry => {
+        const dateStr = entry.invoiceDueDate || entry.etd;
+        if (!dateStr) return false;
+        const date = new Date(dateStr);
+        return date < today;
+      }).length;
+      // PENDING DG: HAZ in volume and finalDG unchecked
+      const pendingDG = activeEntries.filter(entry => {
         const volume = entry.volume || "";
         return volume.toUpperCase().includes("HAZ") && !entry.finalDG;
       }).length;
-
-      const totalShipments = filteredData.length;
-
       setDashboardData({
-        shippedThisWeek,
-        notCompleted,
-        totalShipments,
         pendingSI,
-        pendingBLRelease,
-        pendingFinalDG
+        pendingFirstPrint,
+        pendingCorrection,
+        pendingBL,
+        pendingInvoice,
+        pendingDG
       });
 
       // Prepare shipments by ETD date chart data (SAILING CHART)
@@ -315,17 +323,6 @@ const Dashboard = () => {
     let title = '';
 
     switch(filterType) {
-      case 'shippedThisWeek':
-        filteredData = [...allEntries, ...completedEntries].filter(entry => {
-          if (selectedLocation !== 'All' && entry.location !== selectedLocation) return false;
-          if (!entry.etd) return false;
-          const etdDate = new Date(entry.etd);
-          const startDate = new Date(dateRange.startDate);
-          const endDate = new Date(dateRange.endDate);
-          return etdDate >= startDate && etdDate <= endDate;
-        });
-        title = 'Shipped in Selected Date Range';
-        break;
       case 'pendingSI':
         filteredData = allEntries.filter(entry => {
           if (selectedLocation !== 'All' && entry.location !== selectedLocation) return false;
@@ -333,28 +330,44 @@ const Dashboard = () => {
         });
         title = 'Pending SI';
         break;
-      case 'pendingBLRelease':
+      case 'pendingFirstPrint':
         filteredData = allEntries.filter(entry => {
           if (selectedLocation !== 'All' && entry.location !== selectedLocation) return false;
-          // Only show entries where SOB is ticked and BL Release is unticked
-          return entry.sob === true && !entry.blReleased;
+          return entry.siFiled && !entry.firstPrinted;
         });
-        title = 'Pending B/L Release';
+        title = 'Pending First Print';
         break;
-      case 'pendingFinalDG':
+      case 'pendingCorrection':
+        filteredData = allEntries.filter(entry => {
+          if (selectedLocation !== 'All' && entry.location !== selectedLocation) return false;
+          return entry.firstPrinted && !entry.correctionsFinalised;
+        });
+        title = 'Pending Correction';
+        break;
+      case 'pendingBL':
+        filteredData = allEntries.filter(entry => {
+          if (selectedLocation !== 'All' && entry.location !== selectedLocation) return false;
+          return entry.correctionsFinalised && !entry.blReleased;
+        });
+        title = 'Pending BL';
+        break;
+      case 'pendingInvoice':
+        filteredData = allEntries.filter(entry => {
+          if (selectedLocation !== 'All' && entry.location !== selectedLocation) return false;
+          const dateStr = entry.invoiceDueDate || entry.etd;
+          if (!dateStr) return false;
+          const date = new Date(dateStr);
+          return date < new Date();
+        });
+        title = 'Pending Invoice';
+        break;
+      case 'pendingDG':
         filteredData = allEntries.filter(entry => {
           if (selectedLocation !== 'All' && entry.location !== selectedLocation) return false;
           const volume = entry.volume || "";
           return volume.toUpperCase().includes("HAZ") && !entry.finalDG;
         });
-        title = 'Pending Final DG';
-        break;
-      case 'notCompleted':
-        filteredData = allEntries.filter(entry => {
-          if (selectedLocation !== 'All' && entry.location !== selectedLocation) return false;
-          return !entry.blReleased;
-        });
-        title = 'Not Completed';
+        title = 'Pending DG';
         break;
       default:
         return;
@@ -720,17 +733,7 @@ const Dashboard = () => {
 
       {/* Metrics Cards */}
       <div className="row mb-4">
-        <div className="col-md-3 mb-3">
-          <div 
-            className="dashboard-card clickable-card p-4 text-center" 
-            style={{ backgroundColor: '#17a2b8' }}
-            onClick={() => handleDashboardClick('shippedThisWeek', window.dashboardData?.allEntries || [], window.dashboardData?.completedEntries || [])}
-          >
-            <div className="metric-number">{dashboardData.shippedThisWeek}</div>
-            <div className="metric-label">SHIPPED IN DATE RANGE</div>
-          </div>
-        </div>
-        <div className="col-md-3 mb-3">
+        <div className="col-md-2 mb-3">
           <div 
             className="dashboard-card clickable-card p-4 text-center" 
             style={{ backgroundColor: '#ffc107' }}
@@ -740,44 +743,54 @@ const Dashboard = () => {
             <div className="metric-label" style={{ color: '#212529' }}>PENDING SI</div>
           </div>
         </div>
-        <div className="col-md-3 mb-3">
+        <div className="col-md-2 mb-3">
+          <div 
+            className="dashboard-card clickable-card p-4 text-center" 
+            style={{ backgroundColor: '#17a2b8' }}
+            onClick={() => handleDashboardClick('pendingFirstPrint', window.dashboardData?.allEntries || [], window.dashboardData?.completedEntries || [])}
+          >
+            <div className="metric-number">{dashboardData.pendingFirstPrint}</div>
+            <div className="metric-label">PENDING FIRST PRINT</div>
+          </div>
+        </div>
+        <div className="col-md-2 mb-3">
           <div 
             className="dashboard-card clickable-card p-4 text-center" 
             style={{ backgroundColor: '#fd7e14' }}
-            onClick={() => handleDashboardClick('pendingBLRelease', window.dashboardData?.allEntries || [], window.dashboardData?.completedEntries || [])}
+            onClick={() => handleDashboardClick('pendingCorrection', window.dashboardData?.allEntries || [], window.dashboardData?.completedEntries || [])}
           >
-            <div className="metric-number">{dashboardData.pendingBLRelease}</div>
-            <div className="metric-label">PENDING B/L RELEASE</div>
+            <div className="metric-number">{dashboardData.pendingCorrection}</div>
+            <div className="metric-label">PENDING CORRECTION</div>
           </div>
         </div>
-        <div className="col-md-3 mb-3">
+        <div className="col-md-2 mb-3">
           <div 
             className="dashboard-card clickable-card p-4 text-center" 
             style={{ backgroundColor: '#e83e8c' }}
-            onClick={() => handleDashboardClick('pendingFinalDG', window.dashboardData?.allEntries || [], window.dashboardData?.completedEntries || [])}
+            onClick={() => handleDashboardClick('pendingBL', window.dashboardData?.allEntries || [], window.dashboardData?.completedEntries || [])}
           >
-            <div className="metric-number">{dashboardData.pendingFinalDG}</div>
-            <div className="metric-label">PENDING FINAL DG</div>
+            <div className="metric-number">{dashboardData.pendingBL}</div>
+            <div className="metric-label">PENDING BL</div>
           </div>
         </div>
-      </div>
-
-      {/* Second Row of Metrics */}
-      <div className="row mb-4">
-        <div className="col-md-6 mb-3">
+        <div className="col-md-2 mb-3">
           <div 
             className="dashboard-card clickable-card p-4 text-center" 
             style={{ backgroundColor: '#dc3545' }}
-            onClick={() => handleDashboardClick('notCompleted', window.dashboardData?.allEntries || [], window.dashboardData?.completedEntries || [])}
+            onClick={() => handleDashboardClick('pendingInvoice', window.dashboardData?.allEntries || [], window.dashboardData?.completedEntries || [])}
           >
-            <div className="metric-number">{dashboardData.notCompleted}</div>
-            <div className="metric-label">NOT COMPLETED</div>
+            <div className="metric-number">{dashboardData.pendingInvoice}</div>
+            <div className="metric-label">PENDING INVOICE</div>
           </div>
         </div>
-        <div className="col-md-6 mb-3">
-          <div className="dashboard-card p-4 text-center" style={{ backgroundColor: '#6c757d' }}>
-            <div className="metric-number">{dashboardData.totalShipments}</div>
-            <div className="metric-label">TOTAL SHIPMENTS</div>
+        <div className="col-md-2 mb-3">
+          <div 
+            className="dashboard-card clickable-card p-4 text-center" 
+            style={{ backgroundColor: '#6c757d' }}
+            onClick={() => handleDashboardClick('pendingDG', window.dashboardData?.allEntries || [], window.dashboardData?.completedEntries || [])}
+          >
+            <div className="metric-number">{dashboardData.pendingDG}</div>
+            <div className="metric-label">PENDING DG</div>
           </div>
         </div>
       </div>

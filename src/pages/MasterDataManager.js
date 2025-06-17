@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { db } from "../firebase";
-import { getDoc, doc, updateDoc, collection, getDocs } from "firebase/firestore";
+import { getDoc, doc, updateDoc, collection, getDocs, runTransaction, setDoc, query, where } from "firebase/firestore";
 import { toast } from "react-toastify";
 
 function MasterDataManager() {
@@ -12,6 +12,7 @@ function MasterDataManager() {
   const [oldName, setOldName] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [customers, setCustomers] = useState([]);
 
   const masterOptions = [
     { value: "customer", label: "Customer", icon: "👥", color: "#0d6efd" },
@@ -54,34 +55,68 @@ function MasterDataManager() {
 
   useEffect(() => {
     if (selectedMaster) {
+      console.log(`Fetching data for ${selectedMaster}`);
       fetchMasterList(selectedMaster);
       setShowAddForm(false);
     }
   }, [selectedMaster]);
+
+  useEffect(() => {
+    const fetchCustomers = async () => {
+      const customerSnapshot = await getDocs(collection(db, "customers"));
+      setCustomers(customerSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    };
+    fetchCustomers();
+  }, []);
 
   const fetchMasterList = async (field) => {
     setIsLoading(true);
     try {
       const docRef = doc(db, "newMaster", field);
       const docSnap = await getDoc(docRef);
+      console.log(`Fetched document for ${field}:`, docSnap.exists() ? docSnap.data() : "Document does not exist");
+
       if (docSnap.exists()) {
-        setMasterList(docSnap.data().list || []);
+        const data = docSnap.data().list || [];
+        console.log(`Master list for ${field}:`, data);
+        setMasterList(data);
         setNewEntry({});
       } else {
+        console.log(`No document found for ${field}, initializing empty list`);
         setMasterList([]);
         setNewEntry({});
       }
     } catch (error) {
       console.error("Error fetching master data:", error);
-      toast.error("Error loading master data");
+      toast.error(`Error loading ${field} data: ${error.message}`);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleEdit = (index) => {
-    setEditIndex(index);
-    const item = masterList[index];
+  // Sort masterList alphabetically by 'name' or 'type' before rendering
+  const sortedMasterList = [...masterList].sort((a, b) => {
+    const key = selectedMaster === 'equipmentType' ? 'type' : 'name';
+    const aValue = (a[key] || '').toUpperCase();
+    const bValue = (b[key] || '').toUpperCase();
+    if (aValue < bValue) return -1;
+    if (aValue > bValue) return 1;
+    return 0;
+  });
+
+  const handleEdit = (sortedIndex) => {
+    console.log(`Editing sorted index ${sortedIndex}`);
+    const item = sortedMasterList[sortedIndex];
+    
+    // Find the actual index in the original masterList
+    const key = selectedMaster === 'equipmentType' ? 'type' : 'name';
+    const actualIndex = masterList.findIndex(masterItem => 
+      masterItem[key] === item[key]
+    );
+    
+    console.log(`Actual index in masterList: ${actualIndex}`, item);
+    setEditIndex(actualIndex);
+    
     setEditData({
       ...item,
       customerEmail: item.customerEmail ? item.customerEmail.join(", ") : "",
@@ -90,8 +125,9 @@ function MasterDataManager() {
     setOldName(item.name || item.type);
   };
 
-  const handleSave = async (index) => {
+  const handleSave = async (actualIndex) => {
     setIsLoading(true);
+    console.log(`Saving edited data at actual index ${actualIndex}:`, editData);
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     const updatedData = {
       ...editData,
@@ -117,55 +153,82 @@ function MasterDataManager() {
     }
 
     const updatedList = [...masterList];
-    updatedList[index] = updatedData;
+    updatedList[actualIndex] = updatedData;
 
     const docRef = doc(db, "newMaster", selectedMaster);
     try {
       await updateDoc(docRef, { list: updatedList });
       toast.success("Master data updated successfully!");
-      setEditIndex(null);
       setMasterList(updatedList);
+      setEditIndex(null);
 
       if (selectedMaster === "customer" && oldName && oldName !== updatedData.name) {
         await syncEntriesWithMaster(oldName, updatedData, selectedMaster);
       }
     } catch (error) {
-      console.error("Error updating document: ", error);
-      toast.error("Failed to update master data.");
+      console.error("Error updating document:", error);
+      toast.error(`Failed to update ${selectedMaster} data: ${error.message}`);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleDelete = async (index) => {
+  const handleDelete = async (sortedIndex) => {
     if (!window.confirm("Are you sure you want to delete this entry?")) return;
-    
+
     setIsLoading(true);
-    const updatedList = [...masterList];
-    updatedList.splice(index, 1);
+    const itemToDelete = sortedMasterList[sortedIndex];
+    const key = selectedMaster === "equipmentType" ? "type" : "name";
+    const valueToDelete = itemToDelete[key];
+
+    console.log("Deleting item:", itemToDelete);
 
     const docRef = doc(db, "newMaster", selectedMaster);
     try {
-      await updateDoc(docRef, { list: updatedList });
+      await runTransaction(db, async (transaction) => {
+        const docSnap = await transaction.get(docRef);
+        let currentList = [];
+        if (docSnap.exists()) {
+          currentList = Array.isArray(docSnap.data().list) ? docSnap.data().list : [];
+        }
+
+        // Find the index of the item in Firestore list by matching the unique identifier
+        const firestoreIndex = currentList.findIndex(item => item[key] === valueToDelete);
+        if (firestoreIndex === -1) {
+          throw new Error(`Item ${valueToDelete} not found in Firestore`);
+        }
+
+        const updatedList = [...currentList];
+        updatedList.splice(firestoreIndex, 1);
+        transaction.set(docRef, { list: updatedList }, { merge: true });
+      });
+
+      await fetchMasterList(selectedMaster);
       toast.success("Master data deleted successfully!");
-      setMasterList(updatedList);
     } catch (error) {
-      console.error("Error deleting document: ", error);
-      toast.error("Failed to delete master data.");
+      console.error("Error deleting document:", error);
+      toast.error(`Failed to delete ${selectedMaster} data: ${error.message}`);
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleChange = (field, value) => {
+    console.log(`Updating editData field ${field}:`, value);
     setEditData({ ...editData, [field]: value });
   };
 
   const handleNewEntryChange = (field, value) => {
-    setNewEntry({ ...newEntry, [field]: value });
+    console.log(`Updating newEntry field ${field}:`, value);
+    // Only convert to uppercase for non-email fields
+    setNewEntry({
+      ...newEntry,
+      [field]: field.includes("Email") ? value : value.toUpperCase()
+    });
   };
 
   const handleAddNewEntry = async () => {
+    console.log(`Adding new entry for ${selectedMaster}:`, newEntry);
     const requiredFields = fieldDefinitions[selectedMaster].filter(f => f.required);
     const hasRequiredFields = requiredFields.every(field => 
       newEntry[field.key] && newEntry[field.key].trim()
@@ -173,6 +236,7 @@ function MasterDataManager() {
 
     if (!hasRequiredFields) {
       toast.error("Please fill all required fields before adding.");
+      console.log("Missing required fields:", requiredFields);
       return;
     }
 
@@ -181,10 +245,10 @@ function MasterDataManager() {
     const updatedEntry = {
       ...newEntry,
       customerEmail: newEntry.customerEmail
-        ? newEntry.customerEmail.split(",").map(email => email.trim()).filter(email => email)
+        ? newEntry.customerEmail.split(",").map(email => email.trim().toLowerCase()).filter(email => email)
         : [],
       salesPersonEmail: newEntry.salesPersonEmail
-        ? newEntry.salesPersonEmail.split(",").map(email => email.trim()).filter(email => email)
+        ? newEntry.salesPersonEmail.split(",").map(email => email.trim().toLowerCase()).filter(email => email)
         : []
     };
 
@@ -201,51 +265,102 @@ function MasterDataManager() {
       }
     }
 
-    const updatedList = [...masterList, updatedEntry];
-
     const docRef = doc(db, "newMaster", selectedMaster);
     try {
+      const docSnap = await getDoc(docRef);
+      let updatedList = [];
+
+      if (docSnap.exists()) {
+        const existingData = docSnap.data().list || [];
+        const isDuplicate = existingData.some(item => 
+          (item.name || item.type)?.toUpperCase() === (updatedEntry.name || updatedEntry.type)?.toUpperCase()
+        );
+
+        if (isDuplicate) {
+          toast.error(`${selectedMaster} '${updatedEntry.name || updatedEntry.type}' already exists.`);
+          console.log(`Duplicate entry detected:`, updatedEntry);
+          setIsLoading(false);
+          return;
+        }
+        updatedList = [...existingData, updatedEntry];
+      } else {
+        updatedList = [updatedEntry];
+      }
+
       await updateDoc(docRef, { list: updatedList });
+      // Add customerId to the newly added customer if selectedMaster is customer
+      if (selectedMaster === "customer") {
+        // Fetch the updated list
+        const updatedDocSnap = await getDoc(docRef);
+        if (updatedDocSnap.exists()) {
+          let listWithId = updatedDocSnap.data().list || [];
+          // Find the last added customer (should be the last in the list)
+          const lastIndex = listWithId.length - 1;
+          if (lastIndex >= 0 && !listWithId[lastIndex].customerId) {
+            listWithId[lastIndex].customerId = docRef.id;
+            await updateDoc(docRef, { list: listWithId });
+          }
+        }
+      }
       toast.success("New master data added successfully!");
+      console.log(`Successfully added new entry to ${selectedMaster}:`, updatedEntry);
       setMasterList(updatedList);
       setNewEntry({});
       setShowAddForm(false);
     } catch (error) {
-      console.error("Error adding new entry: ", error);
-      toast.error("Failed to add new master data.");
+      console.error("Error adding new entry:", error);
+      toast.error(`Failed to add ${selectedMaster} data: ${error.message}`);
     } finally {
       setIsLoading(false);
     }
   };
 
   const syncEntriesWithMaster = async (oldName, newData, fieldType) => {
-    const entriesSnapshot = await getDocs(collection(db, "entries"));
-    const updates = [];
+    console.log(`Syncing entries for ${fieldType}: ${oldName} ->`, newData);
+    try {
+      // Use a query to fetch only entries where the customer name matches oldName
+      const entriesQuery = query(collection(db, "entries"), where(`${fieldType}.name`, "==", oldName));
+      const entriesSnapshot = await getDocs(entriesQuery);
+      const updates = [];
 
-    for (const entryDoc of entriesSnapshot.docs) {
-      const entryData = entryDoc.data();
-      const entryId = entryDoc.id;
-
-      if (entryData[fieldType]?.name === oldName) {
+      for (const entryDoc of entriesSnapshot.docs) {
+        const entryId = entryDoc.id;
         const docRef = doc(db, "entries", entryId);
-        updates.push(updateDoc(docRef, { [fieldType]: newData }));
+        // Update all customer fields in the entry
+        updates.push(updateDoc(docRef, { 
+          [fieldType]: {
+            ...newData,
+            // Ensure email arrays are properly formatted
+            customerEmail: newData.customerEmail || [],
+            salesPersonEmail: newData.salesPersonEmail || []
+          }
+        }));
       }
-    }
 
-    if (updates.length > 0) {
-      await Promise.all(updates);
-      toast.success(`Entries synced for ${fieldType}: ${oldName} ➔ ${newData.name}`);
-    } else {
-      toast.info("No matching entries found to update.");
+      if (updates.length > 0) {
+        await Promise.all(updates);
+        toast.success(`Entries synced for ${fieldType}: ${oldName} ➔ ${newData.name}`);
+      } else {
+        toast.info("No matching entries found to update.");
+      }
+    } catch (error) {
+      console.error("Error syncing entries:", error);
+      toast.error(`Failed to sync entries for ${fieldType}: ${error.message}`);
     }
   };
 
   const getCurrentMasterOption = () => {
-    return masterOptions.find(option => option.value === selectedMaster);
+    return masterOptions.find(option => option.value === selectedMaster) || {};
   };
 
   const getFieldsForMaster = () => {
     return fieldDefinitions[selectedMaster] || [];
+  };
+
+  // Helper function to get the sorted index for rendering
+  const getSortedIndex = (item) => {
+    const key = selectedMaster === 'equipmentType' ? 'type' : 'name';
+    return sortedMasterList.findIndex(sortedItem => sortedItem[key] === item[key]);
   };
 
   return (
@@ -514,13 +629,12 @@ function MasterDataManager() {
         }
         
         .form-control-sm:focus {
-          border-color: #0d6efd;
+          border-color: #0d6d;
           box-shadow: 0 0 0 0.15rem rgba(13, 110, 253, 0.1);
         }
       `}</style>
 
       <div className="container">
-        {/* Header */}
         <div className="row mb-4">
           <div className="col-12">
             <h1 className="display-6 mb-2" style={{ color: '#2c3e50', fontWeight: '700' }}>
@@ -530,7 +644,6 @@ function MasterDataManager() {
           </div>
         </div>
 
-        {/* Master Type Selector */}
         <div className="master-selector-card">
           <h5 className="mb-4">Select Master Data Type</h5>
           <div className="row">
@@ -556,7 +669,6 @@ function MasterDataManager() {
           </div>
         </div>
 
-        {/* Data Management Section */}
         {selectedMaster && (
           <div className="data-container">
             <div className="data-header d-flex justify-content-between align-items-center">
@@ -598,7 +710,6 @@ function MasterDataManager() {
               </div>
             </div>
 
-            {/* Add New Entry Form */}
             {showAddForm && (
               <div className="add-form-container">
                 <h6 className="mb-3">Add New {getCurrentMasterOption()?.label}</h6>
@@ -644,7 +755,6 @@ function MasterDataManager() {
               </div>
             )}
 
-            {/* Data Table */}
             <div className="table-container">
               {isLoading ? (
                 <div className="text-center py-5">
@@ -662,89 +772,97 @@ function MasterDataManager() {
                     </tr>
                   </thead>
                   <tbody>
-                    {masterList.map((item, index) => (
-                      <tr key={index}>
-                        {getFieldsForMaster().map((field) => (
-                          <td key={field.key}>
-                            {editIndex === index ? (
-                              <input
-                                type={field.key.includes("Email") ? "text" : "text"}
-                                className="form-control form-control-sm"
-                                value={editData[field.key] || ""}
-                                onChange={(e) => handleChange(field.key, e.target.value)}
-                              />
-                            ) : (
-                              <span>
-                                {field.key.includes("Email") 
-                                  ? (item[field.key] || []).join(", ") 
-                                  : item[field.key] || ""}
-                              </span>
-                            )}
-                          </td>
-                        ))}
-                        <td>
-                          <div className="d-flex gap-2">
-                            {editIndex === index ? (
-                              <>
-                                <button
-                                  className="action-btn save-btn"
-                                  onClick={() => handleSave(index)}
-                                  disabled={isLoading}
-                                  title="Save changes"
-                                >
-                                  {isLoading ? (
-                                    <div className="spinner-border" style={{ width: '12px', height: '12px' }}></div>
-                                  ) : (
+                    {sortedMasterList.map((item, sortedIndex) => {
+                      const actualIndex = masterList.findIndex(masterItem => {
+                        const key = selectedMaster === 'equipmentType' ? 'type' : 'name';
+                        return masterItem[key] === item[key];
+                      });
+                      const isEditing = editIndex === actualIndex;
+
+                      return (
+                        <tr key={sortedIndex}>
+                          {getFieldsForMaster().map((field) => (
+                            <td key={field.key}>
+                              {isEditing ? (
+                                <input
+                                  type={field.key.includes("Email") ? "text" : "text"}
+                                  className="form-control form-control-sm"
+                                  value={editData[field.key] || ""}
+                                  onChange={(e) => handleChange(field.key, e.target.value)}
+                                />
+                              ) : (
+                                <span>
+                                  {field.key.includes("Email") 
+                                    ? (item[field.key] || []).join(", ") 
+                                    : item[field.key] || ""}
+                                </span>
+                              )}
+                            </td>
+                          ))}
+                          <td>
+                            <div className="d-flex gap-2">
+                              {isEditing ? (
+                                <>
+                                  <button
+                                    className="action-btn save-btn"
+                                    onClick={() => handleSave(actualIndex)}
+                                    disabled={isLoading}
+                                    title="Save changes"
+                                  >
+                                    {isLoading ? (
+                                      <div className="spinner-border" style={{ width: '12px', height: '12px' }}></div>
+                                    ) : (
+                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                                        <polyline points="17,21 17,13 7,13 7,21"/>
+                                        <polyline points="7,3 7,8 15,8"/>
+                                      </svg>
+                                    )}
+                                  </button>
+                                  <button
+                                    className="action-btn cancel-btn"
+                                    onClick={() => setEditIndex(null)}
+                                    title="Cancel editing"
+                                  >
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
-                                      <polyline points="17,21 17,13 7,13 7,21"/>
-                                      <polyline points="7,3 7,8 15,8"/>
+                                      <line x1="18" y1="6" x2="6" y2="18"/>
+                                      <line x1="6" y1="6" x2="18" y2="18"/>
                                     </svg>
-                                  )}
-                                </button>
-                                <button
-                                  className="action-btn cancel-btn"
-                                  onClick={() => setEditIndex(null)}
-                                  title="Cancel editing"
-                                >
-                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <line x1="18" y1="6" x2="6" y2="18"/>
-                                    <line x1="6" y1="6" x2="18" y2="18"/>
-                                  </svg>
-                                </button>
-                              </>
-                            ) : (
-                              <>
-                                <button
-                                  className="action-btn edit-btn"
-                                  onClick={() => handleEdit(index)}
-                                  disabled={isLoading}
-                                  title="Edit this entry"
-                                >
-                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                                  </svg>
-                                </button>
-                                <button
-                                  className="action-btn delete-btn"
-                                  onClick={() => handleDelete(index)}
-                                  disabled={isLoading}
-                                  title="Delete this entry"
-                                >
-                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <polyline points="3,6 5,6 21,6"/>
-                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                                    <line x1="10" y1="11" x2="10" y2="17"/>
-                                    <line x1="14" y1="11" x2="14" y2="17"/>
-                                  </svg>
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    className="action-btn edit-btn"
+                                    onClick={() => handleEdit(sortedIndex)}
+                                    disabled={isLoading}
+                                    title="Edit this entry"
+                                  >
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                                    </svg>
+                                  </button>
+                                  <button
+                                    className="action-btn delete-btn"
+                                    onClick={() => handleDelete(sortedIndex)}
+                                    disabled={isLoading}
+                                    title="Delete this entry"
+                                  >
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                      <polyline points="3,6 5,6 21,6"/>
+                                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                                      <line x1="10" y1="11" x2="10" y2="17"/>
+                                      <line x1="14" y1="11" x2="14" y2="17"/>
+                                    </svg>
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               ) : (
@@ -768,7 +886,6 @@ function MasterDataManager() {
           </div>
         )}
 
-        {/* Initial State */}
         {!selectedMaster && (
           <div className="text-center py-5">
             <div style={{ fontSize: '4rem', marginBottom: '1rem', opacity: 0.3 }}>📊</div>

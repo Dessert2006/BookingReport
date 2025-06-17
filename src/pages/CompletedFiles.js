@@ -11,6 +11,7 @@ function CompletedFiles() {
   const [searchQuery, setSearchQuery] = useState("");
   const [locations, setLocations] = useState([]);
   const [selectedLocations, setSelectedLocations] = useState([]);
+  const [customers, setCustomers] = useState({}); // customerId -> customer data
 
   // Function to format dates from YYYY-MM-DD to DD-MM-YYYY
   const formatDate = (dateStr) => {
@@ -54,6 +55,19 @@ function CompletedFiles() {
     return value;
   };
 
+  // Fetch all customers on mount
+  useEffect(() => {
+    const fetchCustomers = async () => {
+      const customerSnapshot = await getDocs(collection(db, "customers"));
+      const customerMap = {};
+      customerSnapshot.forEach(docSnap => {
+        customerMap[docSnap.id] = { id: docSnap.id, ...docSnap.data() };
+      });
+      setCustomers(customerMap);
+    };
+    fetchCustomers();
+  }, []);
+
   useEffect(() => {
     const fetchCompletedEntries = async () => {
       const querySnapshot = await getDocs(collection(db, "completedFiles"));
@@ -62,45 +76,18 @@ function CompletedFiles() {
 
       querySnapshot.forEach((docSnap) => {
         const entryData = { ...docSnap.data(), id: docSnap.id };
-        const { volume, containerNo } = parseEquipmentDetails(entryData.equipmentDetails || []);
-
         entryList.push({
           ...entryData,
-          id: docSnap.id,
-          location: entryData.location?.name || entryData.location || "",
-          customer: entryData.customer?.name || entryData.customer || "",
-          salesPersonName: entryData.customer?.salesPerson || "",
-          line: entryData.line?.name || entryData.line || "",
-          pol: entryData.pol?.name || entryData.pol || "",
-          pod: entryData.pod?.name || entryData.pod || "",
-          fpod: entryData.fpod?.name || entryData.fpod || "",
-          vessel: entryData.vessel?.name || entryData.vessel || "",
-          // Use the formatted volume and containerNo, or fall back to existing data
-          volume: formatMultipleValues(volume || entryData.volume || ""),
-          containerNo: formatMultipleValues(containerNo || entryData.containerNo || ""),
-          equipmentDetails: entryData.equipmentDetails || [],
-          isfSent: entryData.isfSent || false,
-          sob: entryData.sob || false,
-          sobDate: entryData.sobDate || "",
-          finalDG: entryData.finalDG || false,
-          blNo: entryData.blNo || "",
-          invoiceNo: entryData.invoiceNo || "",
-          referenceNo: entryData.referenceNo || "",
-          remarks: entryData.remarks || "",
-          etaDestination: entryData.etaDestination || "",
-          courierDetails: entryData.courierDetails || ""
+          customerId: entryData.customerId || "", // new normalized field
         });
-
         if (entryData.location) {
           locationSet.add(entryData.location);
         }
       });
-
       setCompletedEntries(entryList);
       setFilteredEntries(entryList);
       setLocations([...locationSet]);
     };
-
     fetchCompletedEntries();
   }, []);
 
@@ -161,10 +148,11 @@ function CompletedFiles() {
       renderCell: (params) => params.value || ""
     },
     {
-      field: "customer",
+      field: "customerId",
       headerName: "Customer",
       width: 200,
-      renderCell: (params) => params.value || ""
+      valueGetter: (params) => customers[params.row.customerId]?.name || "",
+      renderCell: (params) => customers[params.row.customerId]?.name || "",
     },
     {
       field: "referenceNo",
