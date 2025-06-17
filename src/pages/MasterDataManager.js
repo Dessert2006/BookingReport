@@ -9,7 +9,7 @@ function MasterDataManager() {
   const [editIndex, setEditIndex] = useState(null);
   const [editData, setEditData] = useState({});
   const [newEntry, setNewEntry] = useState({});
-  const [oldName, setOldName] = useState("");
+  const [oldData, setOldData] = useState({}); // Store the original data before edit
   const [isLoading, setIsLoading] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [customers, setCustomers] = useState([]);
@@ -122,7 +122,7 @@ function MasterDataManager() {
       customerEmail: item.customerEmail ? item.customerEmail.join(", ") : "",
       salesPersonEmail: item.salesPersonEmail ? item.salesPersonEmail.join(", ") : ""
     });
-    setOldName(item.name || item.type);
+    setOldData(item); // Store the original data for comparison in handleSave
   };
 
   const handleSave = async (actualIndex) => {
@@ -162,8 +162,14 @@ function MasterDataManager() {
       setMasterList(updatedList);
       setEditIndex(null);
 
-      if (selectedMaster === "customer" && oldName && oldName !== updatedData.name) {
-        await syncEntriesWithMaster(oldName, updatedData, selectedMaster);
+      // Trigger sync if any customer field has changed
+      if (selectedMaster === "customer") {
+        const hasChanges = Object.keys(updatedData).some(key => 
+          JSON.stringify(updatedData[key]) !== JSON.stringify(oldData[key])
+        );
+        if (hasChanges) {
+          await syncEntriesWithMaster(oldData.name, updatedData, selectedMaster);
+        }
       }
     } catch (error) {
       console.error("Error updating document:", error);
@@ -629,7 +635,7 @@ function MasterDataManager() {
         }
         
         .form-control-sm:focus {
-          border-color: #0d6d;
+          border-color: #0d6efd;
           box-shadow: 0 0 0 0.15rem rgba(13, 110, 253, 0.1);
         }
       `}</style>
