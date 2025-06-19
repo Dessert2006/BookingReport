@@ -7,6 +7,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import { toast } from "react-toastify";
 import * as XLSX from "xlsx";
 import axios from 'axios';
+import AuditTrail from "../components/AuditTrail";
 
 // Clean CSS for single grid
 const styles = `
@@ -91,7 +92,7 @@ const entryFields = {
   blType: "BL Type",
 };
 
-function Entries() {
+function Entries(props) {
   const [entries, setEntries] = useState([]);
   const [filteredEntries, setFilteredEntries] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -133,6 +134,8 @@ function Entries() {
   const [selectedBlType, setSelectedBlType] = useState("");
   const [rowForBlType, setRowForBlType] = useState(null);
   const [page, setPage] = useState(0);
+  const [selectedEntry, setSelectedEntry] = useState(null);
+  const [auditDialogOpen, setAuditDialogOpen] = useState(false);
 
   const gridContainerRef = useRef(null);
   let touchStartX = null;
@@ -443,6 +446,15 @@ function Entries() {
     setSelectedLocations(newSelectedLocations);
   };
 
+  // Add timestamp to every audit action
+  const getAuditAction = (field, user, value) => ({
+    field,
+    user,
+    value,
+    timestamp: new Date().toISOString(),
+  });
+
+  // Update handleProcessRowUpdate to track audit actions
   const handleProcessRowUpdate = async (newRow, oldRow) => {
     try {
       const formattedPortCutOff = newRow.portCutOff ? formatCutOffInput(newRow.portCutOff) : newRow.portCutOff;
@@ -487,8 +499,54 @@ function Entries() {
         }));
       }
 
+      let allActions = [...(oldRow.actions || [])];
+      const trackedFields = [
+        { key: "blNo", label: "BL No" },
+        { key: "containerNo", label: "Container No" },
+        { key: "bookingNo", label: "Booking No" },
+        { key: "volume", label: "Volume" },
+        { key: "referenceNo", label: "Reference NO" },
+        { key: "portCutOff", label: "Port CutOff" },
+        { key: "siCutOff", label: "SI CutOff" },
+        { key: "bookingDate", label: "Booking Date" },
+        { key: "bookingValidity", label: "BKG Validity" },
+        { key: "etd", label: "ETD" },
+        { key: "customer", label: "Customer" },
+        { key: "line", label: "Line" },
+        { key: "pol", label: "POL" },
+        { key: "pod", label: "POD" },
+        { key: "fpod", label: "FPOD" },
+        { key: "vessel", label: "Vessel" },
+        { key: "voyage", label: "Voyage" },
+      ];
+      for (const field of trackedFields) {
+        let oldValue = oldRow[field.key];
+        let newValue = newRow[field.key];
+        if (typeof oldValue === "object" && oldValue !== null) oldValue = oldValue.name || oldValue;
+        if (typeof newValue === "object" && newValue !== null) newValue = newValue.name || newValue;
+        if (oldValue !== newValue && newValue !== undefined && newValue !== "") {
+          allActions.push(getAuditAction(field.label, props.auth?.username || "Unknown", newValue?.toString() || ""));
+        }
+      }
+
+      // Track ALL changed fields, not just those in trackedFields
+      const changedFields = Object.keys(newRow);
+      for (const key of changedFields) {
+        if (key === 'actions') continue;
+        let oldValue = oldRow[key];
+        let newValue = newRow[key];
+        if (typeof oldValue === "object" && oldValue !== null) oldValue = oldValue.name || oldValue;
+        if (typeof newValue === "object" && newValue !== null) newValue = newValue.name || newValue;
+        if (oldValue !== newValue && newValue !== undefined && newValue !== "") {
+          allActions.push(getAuditAction(key, props.auth?.username || "Unknown", newValue?.toString() || ""));
+        }
+      }
+
       const formattedRow = {
         ...newRow,
+        actions: allActions,
+        lastEditedAt: new Date(),
+        lastEditedBy: props.auth?.username || "Unknown",
         portCutOff: formattedPortCutOff,
         siCutOff: formattedSiCutOff,
         customer: customerData,
@@ -1164,9 +1222,30 @@ function Entries() {
       setRowToComplete({ ...row, blReleased: true });
       setConfirmDialogOpen(true);
     } else {
-      const newRow = { ...row, [field]: value };
+      const currentActions = row.actions || [];
+      const newAction = getAuditAction(entryFields[field] || field, props.auth?.username || "Unknown", value ? "Yes" : "No");
+      const updatedActions = [...currentActions, newAction];
+      const newRow = { ...row, [field]: value, actions: updatedActions };
       await handleProcessRowUpdate(newRow, row);
     }
+  };
+
+  const handleDialogSubmit = async () => {
+    if (blNoInput.trim() === "") {
+      toast.error("BL No cannot be empty!");
+      return;
+    }
+    const currentActions = currentRow.actions || [];
+    const newActions = [
+      ...currentActions,
+      getAuditAction("First Print", props.auth?.username || "Unknown", "Yes"),
+      getAuditAction("BL No", props.auth?.username || "Unknown", blNoInput.trim()),
+    ];
+    const newRow = { ...currentRow, firstPrinted: true, blNo: blNoInput.trim(), actions: newActions };
+    await handleProcessRowUpdate(newRow, currentRow);
+    setBlNoInput("");
+    setCurrentRow(null);
+    setOpenDialog(false);
   };
 
   const handleBlTypeDialogSubmit = async () => {
@@ -1174,18 +1253,23 @@ function Entries() {
       toast.error("Please select BL Type");
       return;
     }
-    const newRow = { ...rowForBlType, siFiled: true, blType: selectedBlType };
+    const currentActions = rowForBlType.actions || [];
+    const newActions = [
+      ...currentActions,
+      getAuditAction("SI Filed", props.auth?.username || "Unknown", "Yes"),
+      getAuditAction("BL Type", props.auth?.username || "Unknown", selectedBlType),
+    ];
+    const newRow = { ...rowForBlType, siFiled: true, blType: selectedBlType, actions: newActions };
     await handleProcessRowUpdate(newRow, rowForBlType);
     setSelectedBlType("");
     setRowForBlType(null);
     setBlTypeDialogOpen(false);
   };
-
   const handleBlTypeDialogClose = () => {
-    setSelectedBlType("");
-    setRowForBlType(null);
-    setBlTypeDialogOpen(false);
-  };
+  setSelectedBlType("");
+  setRowForBlType(null);
+  setBlTypeDialogOpen(false);
+};
 
   const handleConfirmComplete = async () => {
     if (!rowToComplete) return;
@@ -1207,6 +1291,10 @@ function Entries() {
 
       const newEntries = entries.filter((entry) => entry.id !== updatedRow.id);
       setEntries(newEntries);
+
+      const currentActions = rowToComplete.actions || [];
+      const newAction = getAuditAction("B/L Released", props.auth?.username || "Unknown", "Yes");
+      const updatedActions = [...currentActions, newAction];
 
       toast.success("Entry marked as B/L Released and moved to Completed Files!");
     } catch (error) {
@@ -1233,18 +1321,6 @@ function Entries() {
     setRowToComplete(null);
   };
 
-  const handleDialogSubmit = async () => {
-    if (blNoInput.trim() === "") {
-      toast.error("BL No cannot be empty!");
-      return;
-    }
-    const newRow = { ...currentRow, firstPrinted: true, blNo: blNoInput.trim() };
-    await handleProcessRowUpdate(newRow, currentRow);
-    setBlNoInput("");
-    setCurrentRow(null);
-    setOpenDialog(false);
-  };
-
   const handleDialogClose = () => {
     setBlNoInput("");
     setCurrentRow(null);
@@ -1269,7 +1345,24 @@ function Entries() {
       const dy = e.touches[0].clientY - touchStartY;
       if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 10) {
         e.preventDefault();
+      } else {
+        e.currentTarget.scrollLeft += 0;
+        e.currentTarget.scrollTop += e.deltaY;
+        e.preventDefault();
       }
+    }
+  };
+
+  const handleRowClick = async (params) => {
+    const entryId = params.row.id || params.id;
+    const entryDoc = await getDoc(doc(db, "entries", entryId));
+    if (entryDoc.exists()) {
+      // Always include the id in the selectedEntry
+      setSelectedEntry({ id: entryId, ...entryDoc.data() });
+      if (props.auth?.role === "admin") setAuditDialogOpen(true);
+    } else {
+      setSelectedEntry(null);
+      setAuditDialogOpen(true); // Still open dialog to show fallback
     }
   };
 
@@ -1418,6 +1511,7 @@ function Entries() {
           autoHeight={false}
           disableColumnResize={false}
           pagination={false}
+          onRowClick={handleRowClick}
           sx={{
             height: '100%',
             width: '100%',
@@ -1693,6 +1787,24 @@ function Entries() {
           <Button onClick={handleBlTypeDialogClose}>Cancel</Button>
           <Button onClick={handleBlTypeDialogSubmit} disabled={!selectedBlType}>Submit</Button>
         </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={auditDialogOpen}
+        onClose={() => setAuditDialogOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>Audit Trail</DialogTitle>
+        <DialogContent>
+          {selectedEntry ? (
+            <AuditTrail entry={selectedEntry} show={true} />
+          ) : (
+            <div style={{ padding: 24, color: '#d32f2f', fontWeight: 500 }}>
+              No entry data found for this row.
+            </div>
+          )}
+        </DialogContent>
       </Dialog>
     </div>
   );

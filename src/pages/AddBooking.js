@@ -3,8 +3,10 @@ import { db } from "../firebase";
 import { collection, addDoc, getDoc, doc, updateDoc, setDoc, arrayUnion, getDocs, query, where } from "firebase/firestore";
 import Select from "react-select";
 import { toast } from "react-toastify";
+import { getDefaultAuditFields } from "../utils/audit";
+import { getAuth } from "firebase/auth";
 
-function AddBooking() {
+function AddBooking({ auth }) {
   const [newEntry, setNewEntry] = useState({
     location: "",
     bookingDate: "",
@@ -346,9 +348,12 @@ function AddBooking() {
         const finalVolume = equipmentDetailsWithContainerNo
           .map(detail => `${detail.qty} x ${detail.equipmentType}`)
           .join(", ");
-        const entryData = { 
+        const username = auth?.username || "Unknown";
+        const auditFields = getDefaultAuditFields(username);
+
+        const entryData = {
           ...newEntry, 
-          equipmentDetails: equipmentDetailsWithContainerNo, // <-- ensure containerNo is included
+          equipmentDetails: equipmentDetailsWithContainerNo, 
           volume: finalVolume,
           vgmFiled: false,
           siFiled: false,
@@ -362,7 +367,8 @@ function AddBooking() {
           blNo: "",
           poNo: "",
           remarks: "",
-          isNominated: newEntry.isNominated // <-- ensure nomination is stored
+          isNominated: newEntry.isNominated,
+          ...auditFields
         };
 
         await addDoc(collection(db, "entries"), entryData);
