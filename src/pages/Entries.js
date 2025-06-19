@@ -1022,6 +1022,30 @@ function Entries(props) {
     ),
   });
 
+  // Add See Audit button as the first column
+  allColumns = [
+    {
+      field: "seeAudit",
+      headerName: "See Audit",
+      sortable: false,
+      filterable: false,
+      width: 110,
+      renderCell: (params) => (
+        <Button
+          variant="outlined"
+          size="small"
+          onClick={() => {
+            setSelectedEntry(params.row);
+            setAuditDialogOpen(true);
+          }}
+        >
+          See Audit
+        </Button>
+      ),
+    },
+    ...allColumns,
+  ];
+
   const handleDeleteClick = (row) => {
     setRowToDelete(row);
     setDeleteDialogOpen(true);
@@ -1359,10 +1383,10 @@ function Entries(props) {
     if (entryDoc.exists()) {
       // Always include the id in the selectedEntry
       setSelectedEntry({ id: entryId, ...entryDoc.data() });
-      if (props.auth?.role === "admin") setAuditDialogOpen(true);
+      // Removed automatic audit dialog opening
     } else {
       setSelectedEntry(null);
-      setAuditDialogOpen(true); // Still open dialog to show fallback
+      // setAuditDialogOpen(true); // Still open dialog to show fallback
     }
   };
 
