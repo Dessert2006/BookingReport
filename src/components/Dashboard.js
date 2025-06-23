@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { db } from "../firebase";
-import { collection, getDocs, doc, updateDoc, deleteDoc } from "firebase/firestore";
+import { collection, getDocs, doc, updateDoc, deleteDoc, getDoc } from "firebase/firestore";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { toast } from "react-toastify";
+import { Box, Button, Dialog, DialogTitle, DialogContent, DialogActions } from "@mui/material";
 
 const Dashboard = () => {
   const [dashboardData, setDashboardData] = useState({
@@ -24,13 +25,27 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [showFilteredView, setShowFilteredView] = useState(false);
   const [filteredViewData, setFilteredViewData] = useState([]);
-  const [originalFilteredData, setOriginalFilteredData] = useState([]); // Store original data for search
+  const [originalFilteredData, setOriginalFilteredData] = useState([]);
   const [filterType, setFilterType] = useState('');
   const [editingEntry, setEditingEntry] = useState(null);
   const [chartSize, setChartSize] = useState('medium');
-  const [searchQuery, setSearchQuery] = useState(''); // Add search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [blTypeDialogOpen, setBlTypeDialogOpen] = useState(false);
+  const [selectedBlType, setSelectedBlType] = useState("");
+  const [rowForBlType, setRowForBlType] = useState(null);
+  const [fpodMaster, setFpodMaster] = useState([]);
 
-  // Set default date range (1 week back from today)
+  useEffect(() => {
+    const fetchFpodMaster = async () => {
+      const docRef = doc(db, "newMaster", "fpod");
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        setFpodMaster((docSnap.data().list || []).map(item => `${item.name}, ${item.country}`));
+      }
+    };
+    fetchFpodMaster();
+  }, []);
+
   useEffect(() => {
     const today = new Date();
     const weekBack = new Date();
@@ -63,7 +78,6 @@ const Dashboard = () => {
     return null;
   };
 
-  // Advanced search function (similar to Entries page)
   const parseAdvancedQuery = (query) => {
     if (!query) return [];
     const stopWords = ["details", "of", "on", "with", "for", "in", "at"];
@@ -90,7 +104,6 @@ const Dashboard = () => {
     return null;
   };
 
-  // Search function for filtered view
   const handleSearchInFilteredView = (query) => {
     setSearchQuery(query);
     
@@ -104,7 +117,7 @@ const Dashboard = () => {
       return tokens.every(token => {
         const textFields = [
           "location", "customer", "line", "pol", "pod", "fpod", "vessel",
-          "bookingNo", "containerNo", "volume", "voyage", "blNo"
+          "bookingNo", "containerNo", "volume", "voyage", "blNo", "blType"
         ];
         
         const textMatch = textFields.some(field => {
@@ -152,14 +165,12 @@ const Dashboard = () => {
     try {
       setLoading(true);
       
-      // Fetch entries data from Firebase
       const entriesSnapshot = await getDocs(collection(db, "entries"));
       const completedSnapshot = await getDocs(collection(db, "completedFiles"));
       
       const allEntries = [];
       const completedEntries = [];
 
-      // Process active entries
       entriesSnapshot.forEach((doc) => {
         const data = { ...doc.data(), id: doc.id, status: 'active' };
         allEntries.push({
@@ -169,10 +180,10 @@ const Dashboard = () => {
           line: data.line?.name || data.line || "",
           vessel: data.vessel?.name || data.vessel || "",
           fpod: data.fpod?.name || data.fpod || "",
+          blType: data.blType || ""
         });
       });
 
-      // Process completed entries
       completedSnapshot.forEach((doc) => {
         const data = { ...doc.data(), id: doc.id, status: 'completed' };
         completedEntries.push({
@@ -182,17 +193,16 @@ const Dashboard = () => {
           line: data.line?.name || data.line || "",
           vessel: data.vessel?.name || data.vessel || "",
           fpod: data.fpod?.name || data.fpod || "",
+          blType: data.blType || ""
         });
       });
 
       const allData = [...allEntries, ...completedEntries];
 
-      // Filter by location
       const filteredData = selectedLocation === 'All' 
         ? allData 
         : allData.filter(entry => entry.location === selectedLocation);
 
-      // Calculate dashboard metrics
       const shippedThisWeek = filteredData.filter(entry => {
         if (!entry.etd) return false;
         const etdDate = new Date(entry.etd);
@@ -201,20 +211,15 @@ const Dashboard = () => {
         return etdDate >= startDate && etdDate <= endDate;
       }).length;
 
-      // Only active entries for pending calculations
       const activeEntries = allEntries.filter(entry => {
         if (selectedLocation !== 'All' && entry.location !== selectedLocation) return false;
         return entry.status === 'active';
       });
-      // PENDING SI: siFiled is unchecked/false
+
       const pendingSI = activeEntries.filter(entry => !entry.siFiled).length;
-      // PENDING FIRST PRINT: siFiled checked, firstPrinted unchecked
       const pendingFirstPrint = activeEntries.filter(entry => entry.siFiled && !entry.firstPrinted).length;
-      // PENDING CORRECTION: firstPrinted checked, correctionsFinalised unchecked
       const pendingCorrection = activeEntries.filter(entry => entry.firstPrinted && !entry.correctionsFinalised).length;
-      // PENDING BL: correctionsFinalised checked, blReleased unchecked
       const pendingBL = activeEntries.filter(entry => entry.correctionsFinalised && !entry.blReleased).length;
-      // PENDING INVOICE: if record's invoiceDueDate (or etd if not present) is before today
       const today = new Date();
       const pendingInvoice = activeEntries.filter(entry => {
         const dateStr = entry.invoiceDueDate || entry.etd;
@@ -222,7 +227,6 @@ const Dashboard = () => {
         const date = new Date(dateStr);
         return date < today;
       }).length;
-      // PENDING DG: HAZ in volume and finalDG unchecked
       const pendingDG = activeEntries.filter(entry => {
         const volume = entry.volume || "";
         return volume.toUpperCase().includes("HAZ") && !entry.finalDG;
@@ -236,11 +240,10 @@ const Dashboard = () => {
         pendingDG
       });
 
-      // Prepare shipments by ETD date chart data (SAILING CHART)
       const dateMap = new Map();
       filteredData.forEach(entry => {
         if (entry.etd) {
-          const etdDate = new Date(entry.etd); // renamed to avoid redeclaration
+          const etdDate = new Date(entry.etd);
           if (etdDate >= new Date(dateRange.startDate) && etdDate <= new Date(dateRange.endDate)) {
             const dateStr = etdDate.toLocaleDateString('en-GB', { 
               day: '2-digit',
@@ -261,7 +264,6 @@ const Dashboard = () => {
 
       setShipmentsByDate(sailingData);
 
-      // Prepare shipments by shipper/customer chart data
       const shipperMap = new Map();
       filteredData.forEach(entry => {
         if (entry.customer) {
@@ -277,7 +279,6 @@ const Dashboard = () => {
 
       setShipmentsByShipper(shipmentsByShipperData);
 
-      // Prepare detailed entries table
       const detailedData = filteredData
         .filter(entry => {
           if (!entry.etd) return false;
@@ -289,7 +290,6 @@ const Dashboard = () => {
 
       setDetailedEntries(detailedData);
 
-      // Store data for filtering
       window.dashboardData = { allEntries, completedEntries };
 
     } catch (error) {
@@ -317,7 +317,6 @@ const Dashboard = () => {
     });
   };
 
-  // Handle clicks on dashboard elements
   const handleDashboardClick = (filterType, allEntries, completedEntries) => {
     let filteredData = [];
     let title = '';
@@ -373,94 +372,75 @@ const Dashboard = () => {
         return;
     }
 
-    setOriginalFilteredData(filteredData); // Store original data
+    setOriginalFilteredData(filteredData);
     setFilteredViewData(filteredData);
     setFilterType(title);
-    setSearchQuery(''); // Reset search when opening modal
+    setSearchQuery('');
     setShowFilteredView(true);
   };
 
-  // Handle editing entry
   const handleEditEntry = (entry) => {
     setEditingEntry({...entry});
   };
 
-  // Handle saving edited entry
-  const handleSaveEntry = async () => {
+  const handleSaveEntry = async (updatedRow = editingEntry) => {
     try {
-      // Update entry in Firebase
-      const docRef = doc(db, "entries", editingEntry.id);
-      
-      // Prepare update data with correct structure
+      const docRef = doc(db, "entries", updatedRow.id);
       const updateData = {
-        bookingNo: editingEntry.bookingNo || "",
-        volume: editingEntry.volume || "",
-        siFiled: Boolean(editingEntry.siFiled),
-        firstPrinted: Boolean(editingEntry.firstPrinted),
-        correctionsFinalised: Boolean(editingEntry.correctionsFinalised),
-        blReleased: Boolean(editingEntry.blReleased),
-        finalDG: Boolean(editingEntry.finalDG)
+        bookingNo: updatedRow.bookingNo || "",
+        volume: updatedRow.volume || "",
+        siFiled: Boolean(updatedRow.siFiled),
+        firstPrinted: Boolean(updatedRow.firstPrinted),
+        correctionsFinalised: Boolean(updatedRow.correctionsFinalised),
+        blReleased: Boolean(updatedRow.blReleased),
+        finalDG: Boolean(updatedRow.finalDG),
+        blType: updatedRow.blType || "",
       };
 
-      // Handle customer field properly
-      if (typeof editingEntry.customer === 'string') {
-        // Keep the original customer object but update the name
-        const originalEntry = filteredViewData.find(entry => entry.id === editingEntry.id);
+      if (typeof updatedRow.customer === 'string') {
+        const originalEntry = filteredViewData.find(entry => entry.id === updatedRow.id);
         if (originalEntry && typeof originalEntry.customer === 'object') {
           updateData.customer = {
             ...originalEntry.customer,
-            name: editingEntry.customer
+            name: updatedRow.customer
           };
         } else {
-          updateData.customer = { name: editingEntry.customer };
+          updateData.customer = { name: updatedRow.customer };
         }
       } else {
-        // If customer is already an object, use it as is
-        updateData.customer = editingEntry.customer;
+        updateData.customer = updatedRow.customer;
       }
-      
-      console.log("Updating with data:", updateData); // Debug log
-      
+
       await updateDoc(docRef, updateData);
-      
-      // Update local state with proper customer display
-      const updatedData = filteredViewData.map(entry => 
-        entry.id === editingEntry.id ? {
-          ...entry, 
+
+      const updatedData = filteredViewData.map(entry =>
+        entry.id === updatedRow.id ? {
+          ...entry,
           ...updateData,
-          customer: updateData.customer.name || updateData.customer // Ensure we store the name for display
+          customer: updateData.customer.name || updateData.customer
         } : entry
       );
       setFilteredViewData(updatedData);
-      
-      // Also update original data
-      const updatedOriginalData = originalFilteredData.map(entry => 
-        entry.id === editingEntry.id ? {
-          ...entry, 
+
+      const updatedOriginalData = originalFilteredData.map(entry =>
+        entry.id === updatedRow.id ? {
+          ...entry,
           ...updateData,
           customer: updateData.customer.name || updateData.customer
         } : entry
       );
       setOriginalFilteredData(updatedOriginalData);
-      
+
       setEditingEntry(null);
-      
-      // Show success toast
       toast.success('Entry updated successfully! 🎉');
-      
-      // Refresh dashboard data to update counters
       fetchDashboardData();
-      
     } catch (error) {
       console.error('Error updating entry:', error);
-      console.error('Error details:', error.message);
       toast.error(`Failed to update entry: ${error.message}`);
     }
   };
 
-  // Handle deleting entry
   const handleDeleteEntry = async (entryId) => {
-    // Show custom alert before deleting
     const confirmDelete = window.confirm(
       '⚠️ DELETE CONFIRMATION ⚠️\n\n' +
       'Are you sure you want to delete this entry?\n\n' +
@@ -471,31 +451,96 @@ const Dashboard = () => {
     
     if (confirmDelete) {
       try {
-        // Delete from Firebase
         await deleteDoc(doc(db, "entries", entryId));
-        
-        // Update local state
         const updatedData = filteredViewData.filter(entry => entry.id !== entryId);
         setFilteredViewData(updatedData);
-        
-        // Update original data
         const updatedOriginalData = originalFilteredData.filter(entry => entry.id !== entryId);
         setOriginalFilteredData(updatedOriginalData);
-        
-        // Show success toast
         toast.success('Entry deleted successfully! ✅');
-        
-        // Refresh dashboard data to update counters
         fetchDashboardData();
-        
       } catch (error) {
         console.error('Error deleting entry:', error);
         toast.error('Failed to delete entry. Please try again.');
       }
     } else {
-      // User cancelled - show info toast
       toast.info('Delete operation cancelled.');
     }
+  };
+
+  const handleCheckboxEdit = async (row, field, value) => {
+    if (field === "siFiled" && value) {
+      setRowForBlType(row);
+      setSelectedBlType("");
+      setBlTypeDialogOpen(true);
+      return;
+    }
+    if (field === "firstPrinted" && value && !row.siFiled) {
+      toast.error("Please tick SI Filed before First Print.");
+      return;
+    }
+    if (field === "correctionsFinalised" && value && !row.firstPrinted) {
+      toast.error("Please tick First Print before Corrections Finalised.");
+      return;
+    }
+    if (field === "blReleased" && value) {
+      const fieldsToCheck = ["vgmFiled", "siFiled", "firstPrinted", "correctionsFinalised"];
+      const entryFpod = row.fpod || "";
+      const matchingFpod = fpodMaster.find(
+        (fpod) => fpod.toUpperCase() === entryFpod.toUpperCase()
+      );
+      if (
+        (matchingFpod && matchingFpod.toUpperCase().includes("USA")) ||
+        entryFpod.toUpperCase().includes("USA")
+      ) {
+        fieldsToCheck.push("isfSent");
+      }
+      const allPrerequisitesMet = fieldsToCheck.every((prereqField) => row[prereqField] === true);
+      if (!allPrerequisitesMet) {
+        toast.error("All previous steps must be completed before releasing B/L.");
+        return;
+      }
+      const updatedRow = { ...row, [field]: value };
+      try {
+        await handleSaveEntry(updatedRow);
+        toast.success("B/L Released successfully!");
+      } catch (error) {
+        toast.error("Failed to release B/L.");
+      }
+    } else {
+      const updatedRow = { ...row, [field]: value };
+      try {
+        await handleSaveEntry(updatedRow);
+      } catch (error) {
+        toast.error(`Failed to update ${field}.`);
+      }
+    }
+  };
+
+  const handleBlTypeDialogSubmit = async () => {
+    if (!selectedBlType) {
+      toast.error("Please select BL Type");
+      return;
+    }
+    const updatedRow = {
+      ...rowForBlType,
+      siFiled: true,
+      blType: selectedBlType,
+    };
+    try {
+      await handleSaveEntry(updatedRow);
+      toast.success("SI Filed and BL Type updated successfully!");
+    } catch (error) {
+      toast.error("Failed to update SI Filed and BL Type.");
+    }
+    setSelectedBlType("");
+    setRowForBlType(null);
+    setBlTypeDialogOpen(false);
+  };
+
+  const handleBlTypeDialogClose = () => {
+    setSelectedBlType("");
+    setRowForBlType(null);
+    setBlTypeDialogOpen(false);
   };
 
   const getChartDimensions = () => {
@@ -516,7 +561,7 @@ const Dashboard = () => {
           barSize: 60,
           margin: { top: 30, right: 40, left: 30, bottom: 80 }
         };
-      default: // medium
+      default:
         return { 
           maxWidth: '800px', 
           height: 280, 
@@ -688,7 +733,6 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Location Filter */}
       <div className="row mb-4">
         <div className="col-12 text-center">
           {['All', 'MUMBAI', 'GUJARAT'].map((location) => (
@@ -703,7 +747,6 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Date Range Selector */}
       <div className="row mb-4">
         <div className="col-12 text-center">
           <div className="d-inline-flex align-items-center gap-3 p-3 bg-light rounded">
@@ -733,7 +776,6 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Metrics Cards */}
       <div className="row mb-4">
         <div className="col-md-2 mb-3">
           <div 
@@ -797,7 +839,6 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Charts Row */}
       <div className="row mb-4">
         <div className="col-12 d-flex flex-column align-items-center">
           <div className="chart-container" style={{ maxWidth: chartDimensions.maxWidth, width: '100%' }}>
@@ -867,7 +908,6 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Filtered View Modal */}
       {showFilteredView && (
         <div className="filtered-view">
           <div className="filtered-content">
@@ -885,7 +925,6 @@ const Dashboard = () => {
               </button>
             </div>
             
-            {/* Search Container */}
             <div className="search-container">
               <input
                 type="text"
@@ -922,13 +961,14 @@ const Dashboard = () => {
                     <th>Corrections Finalised</th>
                     <th>BL Released</th>
                     <th>Final DG</th>
+                    <th>BL Type</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredViewData.length === 0 ? (
                     <tr>
-                      <td colSpan="15" className="text-center py-4">
+                      <td colSpan="16" className="text-center py-4">
                         {searchQuery ? (
                           <div>
                             <p>🔍 No entries found matching your search criteria.</p>
@@ -994,7 +1034,7 @@ const Dashboard = () => {
                             <input 
                               type="checkbox"
                               checked={editingEntry.siFiled || false}
-                              onChange={(e) => setEditingEntry({...editingEntry, siFiled: e.target.checked})}
+                              onChange={(e) => handleCheckboxEdit(entry, 'siFiled', e.target.checked)}
                               className="form-check-input"
                             />
                           ) : (
@@ -1008,7 +1048,7 @@ const Dashboard = () => {
                             <input 
                               type="checkbox"
                               checked={editingEntry.firstPrinted || false}
-                              onChange={(e) => setEditingEntry({...editingEntry, firstPrinted: e.target.checked})}
+                              onChange={(e) => handleCheckboxEdit(entry, 'firstPrinted', e.target.checked)}
                               className="form-check-input"
                             />
                           ) : (
@@ -1022,7 +1062,7 @@ const Dashboard = () => {
                             <input 
                               type="checkbox"
                               checked={editingEntry.correctionsFinalised || false}
-                              onChange={(e) => setEditingEntry({...editingEntry, correctionsFinalised: e.target.checked})}
+                              onChange={(e) => handleCheckboxEdit(entry, 'correctionsFinalised', e.target.checked)}
                               className="form-check-input"
                             />
                           ) : (
@@ -1036,7 +1076,7 @@ const Dashboard = () => {
                             <input 
                               type="checkbox"
                               checked={editingEntry.blReleased || false}
-                              onChange={(e) => setEditingEntry({...editingEntry, blReleased: e.target.checked})}
+                              onChange={(e) => handleCheckboxEdit(entry, 'blReleased', e.target.checked)}
                               className="form-check-input"
                             />
                           ) : (
@@ -1051,7 +1091,7 @@ const Dashboard = () => {
                               <input 
                                 type="checkbox"
                                 checked={editingEntry.finalDG || false}
-                                onChange={(e) => setEditingEntry({...editingEntry, finalDG: e.target.checked})}
+                                onChange={(e) => handleCheckboxEdit(entry, 'finalDG', e.target.checked)}
                                 className="form-check-input"
                               />
                             ) : (
@@ -1065,10 +1105,21 @@ const Dashboard = () => {
                         </td>
                         <td>
                           {editingEntry?.id === entry.id ? (
+                            <input 
+                              className="edit-input"
+                              value={editingEntry.blType || ''}
+                              onChange={(e) => setEditingEntry({...editingEntry, blType: e.target.value})}
+                            />
+                          ) : (
+                            entry.blType || 'N/A'
+                          )}
+                        </td>
+                        <td>
+                          {editingEntry?.id === entry.id ? (
                             <div className="d-flex gap-1">
                               <button 
                                 className="btn btn-success btn-sm"
-                                onClick={handleSaveEntry}
+                                onClick={() => handleSaveEntry()}
                               >
                                 Save
                               </button>
@@ -1105,6 +1156,30 @@ const Dashboard = () => {
           </div>
         </div>
       )}
+
+      <Dialog open={blTypeDialogOpen} onClose={handleBlTypeDialogClose}>
+        <DialogTitle>Select BL Type</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+            <Button
+              variant={selectedBlType === 'OBL' ? 'contained' : 'outlined'}
+              onClick={() => setSelectedBlType('OBL')}
+            >
+              OBL
+            </Button>
+            <Button
+              variant={selectedBlType === 'SEAWAY' ? 'contained' : 'outlined'}
+              onClick={() => setSelectedBlType('SEAWAY')}
+            >
+              SEAWAY
+            </Button>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleBlTypeDialogClose}>Cancel</Button>
+          <Button onClick={handleBlTypeDialogSubmit} disabled={!selectedBlType}>Submit</Button>
+        </DialogActions>
+      </Dialog>
     </div>
   );
 };
