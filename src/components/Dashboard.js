@@ -34,6 +34,9 @@ const Dashboard = () => {
   const [selectedBlType, setSelectedBlType] = useState("");
   const [rowForBlType, setRowForBlType] = useState(null);
   const [fpodMaster, setFpodMaster] = useState([]);
+  const [blNoDialogOpen, setBlNoDialogOpen] = useState(false);
+  const [blNoInput, setBlNoInput] = useState("");
+  const [rowForBlNo, setRowForBlNo] = useState(null);
 
   useEffect(() => {
     const fetchFpodMaster = async () => {
@@ -395,6 +398,7 @@ const Dashboard = () => {
         blReleased: Boolean(updatedRow.blReleased),
         finalDG: Boolean(updatedRow.finalDG),
         blType: updatedRow.blType || "",
+        blNo: updatedRow.blNo || "",
       };
 
       if (typeof updatedRow.customer === 'string') {
@@ -478,6 +482,12 @@ const Dashboard = () => {
       toast.error("Please tick SI Filed before First Print.");
       return;
     }
+    if (field === "firstPrinted" && value) {
+      setRowForBlNo(row);
+      setBlNoInput(row.blNo || "");
+      setBlNoDialogOpen(true);
+      return;
+    }
     if (field === "correctionsFinalised" && value && !row.firstPrinted) {
       toast.error("Please tick First Print before Corrections Finalised.");
       return;
@@ -541,6 +551,33 @@ const Dashboard = () => {
     setSelectedBlType("");
     setRowForBlType(null);
     setBlTypeDialogOpen(false);
+  };
+
+  const handleBlNoDialogSubmit = async () => {
+    if (!blNoInput.trim()) {
+      toast.error("Please enter BL No");
+      return;
+    }
+    const updatedRow = {
+      ...rowForBlNo,
+      firstPrinted: true,
+      blNo: blNoInput.trim(),
+    };
+    try {
+      await handleSaveEntry(updatedRow);
+      toast.success("First Print ticked and BL No updated successfully!");
+    } catch (error) {
+      toast.error("Failed to update First Print and BL No.");
+    }
+    setBlNoInput("");
+    setRowForBlNo(null);
+    setBlNoDialogOpen(false);
+  };
+
+  const handleBlNoDialogClose = () => {
+    setBlNoInput("");
+    setRowForBlNo(null);
+    setBlNoDialogOpen(false);
   };
 
   const getChartDimensions = () => {
@@ -1178,6 +1215,25 @@ const Dashboard = () => {
         <DialogActions>
           <Button onClick={handleBlTypeDialogClose}>Cancel</Button>
           <Button onClick={handleBlTypeDialogSubmit} disabled={!selectedBlType}>Submit</Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={blNoDialogOpen} onClose={handleBlNoDialogClose}>
+        <DialogTitle>Enter BL No</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+            <input
+              type="text"
+              className="form-control"
+              placeholder="Enter BL No"
+              value={blNoInput}
+              onChange={e => setBlNoInput(e.target.value)}
+              autoFocus
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleBlNoDialogClose}>Cancel</Button>
+          <Button onClick={handleBlNoDialogSubmit} disabled={!blNoInput.trim()}>Submit</Button>
         </DialogActions>
       </Dialog>
     </div>
