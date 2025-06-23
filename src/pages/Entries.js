@@ -90,6 +90,7 @@ const entryFields = {
   blReleased: "B/L Released",
   referenceNo: "Reference NO",
   blType: "BL Type",
+  remarks : "Remarks"
 };
 
 function Entries(props) {
@@ -401,11 +402,14 @@ function Entries(props) {
         const docRef = doc(db, "newMaster", field);
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
-          newMasterData[field] = (docSnap.data().list || []).map(item => 
+          let list = (docSnap.data().list || []).map(item => 
             field === "fpod" ? `${item.name}, ${item.country}` : 
             field === "customer" ? item.name : 
             (item.name || item.type || item || "")
           );
+          // Sort alphabetically, case-insensitive
+          list = list.sort((a, b) => a.toString().localeCompare(b.toString(), undefined, { sensitivity: 'base' }));
+          newMasterData[field] = list;
         }
       }
       setMasterData(newMasterData);
@@ -518,6 +522,7 @@ function Entries(props) {
         { key: "fpod", label: "FPOD" },
         { key: "vessel", label: "Vessel" },
         { key: "voyage", label: "Voyage" },
+        { key: "remarks", label: "Remarks" }, // <-- add remarks
       ];
       for (const field of trackedFields) {
         let oldValue = oldRow[field.key];
@@ -564,8 +569,8 @@ function Entries(props) {
 
       const portCutOffChanged = oldRow.portCutOff !== formattedPortCutOff;
       const siCutOffChanged = oldRow.siCutOff !== formattedSiCutOff;
-
-      if (portCutOffChanged || siCutOffChanged) {
+      const etdChanged = oldRow.etd !== newRow.etd;
+      if (portCutOffChanged || siCutOffChanged || etdChanged) {
         const q = query(
           collection(db, "entries"),
           where("vessel", "==", formattedRow.vessel || ""),
@@ -582,7 +587,8 @@ function Entries(props) {
           if (entryId !== formattedRow.id) {
             const updateData = {
               portCutOff: portCutOffChanged ? formattedPortCutOff : docSnap.data().portCutOff,
-              siCutOff: siCutOffChanged ? formattedSiCutOff : docSnap.data().siCutOff
+              siCutOff: siCutOffChanged ? formattedSiCutOff : docSnap.data().siCutOff,
+              etd: etdChanged ? formattedRow.etd : docSnap.data().etd,
             };
             const docRef = doc(db, "entries", entryId);
             batchUpdates.push(updateDoc(docRef, updateData));
@@ -734,7 +740,7 @@ function Entries(props) {
     },
     {
       field: "referenceNo",
-      headerName: "Reference NO",
+      headerName: "Reference",
       editable: true,
       renderCell: (params) => params.value || ""
     },
@@ -1310,6 +1316,7 @@ function Entries(props) {
       delete entryData.salesPersonName;
       delete entryData.customerEmail;
       delete entryData.salesPersonEmail;
+      // remarks is included by default
       await addDoc(collection(db, "completedFiles"), entryData);
       await deleteDoc(doc(db, "entries", updatedRow.id));
 
