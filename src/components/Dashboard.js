@@ -396,6 +396,8 @@ const Dashboard = () => {
         bookingNo: editingEntry.bookingNo || "",
         volume: editingEntry.volume || "",
         siFiled: Boolean(editingEntry.siFiled),
+        firstPrinted: Boolean(editingEntry.firstPrinted),
+        correctionsFinalised: Boolean(editingEntry.correctionsFinalised),
         blReleased: Boolean(editingEntry.blReleased),
         finalDG: Boolean(editingEntry.finalDG)
       };
@@ -916,6 +918,8 @@ const Dashboard = () => {
                     <th>Volume</th>
                     <th>ETD</th>
                     <th>SI Filed</th>
+                    <th>First Printed</th>
+                    <th>Corrections Finalised</th>
                     <th>BL Released</th>
                     <th>Final DG</th>
                     <th>Actions</th>
@@ -924,7 +928,7 @@ const Dashboard = () => {
                 <tbody>
                   {filteredViewData.length === 0 ? (
                     <tr>
-                      <td colSpan="13" className="text-center py-4">
+                      <td colSpan="15" className="text-center py-4">
                         {searchQuery ? (
                           <div>
                             <p>🔍 No entries found matching your search criteria.</p>
@@ -996,6 +1000,34 @@ const Dashboard = () => {
                           ) : (
                             <span className={`badge ${entry.siFiled ? 'bg-success' : 'bg-danger'}`}>
                               {entry.siFiled ? 'Yes' : 'No'}
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          {editingEntry?.id === entry.id ? (
+                            <input 
+                              type="checkbox"
+                              checked={editingEntry.firstPrinted || false}
+                              onChange={(e) => setEditingEntry({...editingEntry, firstPrinted: e.target.checked})}
+                              className="form-check-input"
+                            />
+                          ) : (
+                            <span className={`badge ${entry.firstPrinted ? 'bg-success' : 'bg-danger'}`}>
+                              {entry.firstPrinted ? 'Yes' : 'No'}
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          {editingEntry?.id === entry.id ? (
+                            <input 
+                              type="checkbox"
+                              checked={editingEntry.correctionsFinalised || false}
+                              onChange={(e) => setEditingEntry({...editingEntry, correctionsFinalised: e.target.checked})}
+                              className="form-check-input"
+                            />
+                          ) : (
+                            <span className={`badge ${entry.correctionsFinalised ? 'bg-success' : 'bg-danger'}`}>
+                              {entry.correctionsFinalised ? 'Yes' : 'No'}
                             </span>
                           )}
                         </td>
