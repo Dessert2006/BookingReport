@@ -14,7 +14,7 @@ function AddBooking({ auth }) {
     bookingValidity: "",
     line: "",
     bookingNo: "",
-    referenceNo: "", // Optional Reference NO
+    referenceNo: "",
     pol: "",
     pod: "",
     fpod: "",
@@ -24,7 +24,7 @@ function AddBooking({ auth }) {
     portCutOff: "",
     siCutOff: "",
     etd: "",
-    isNominated: false // <-- Add nomination field
+    isNominated: false
   });
 
   const [masterData, setMasterData] = useState({
@@ -411,7 +411,7 @@ function AddBooking({ auth }) {
           portCutOff: "",
           siCutOff: "",
           etd: "",
-          isNominated: false // <-- reset nomination
+          isNominated: false
         });
       } catch (error) {
         toast.error("Failed to add booking entry. Please try again.");
@@ -504,8 +504,10 @@ function AddBooking({ auth }) {
         ...provided,
         borderColor: state.isFocused ? '#0d6efd' : '#ced4da',
         boxShadow: state.isFocused ? '0 0 0 0.2rem rgba(13, 110, 253, 0.25)' : 'none',
-        borderRadius: '8px',
-        minHeight: '42px',
+        borderRadius: '6px',
+        minHeight: '36px',
+        fontSize: '13px',
+        padding: '0 5px',
         '&:hover': {
           borderColor: '#0d6efd'
         }
@@ -514,54 +516,54 @@ function AddBooking({ auth }) {
         ...provided,
         backgroundColor: state.isSelected ? '#0d6efd' : state.isFocused ? '#f8f9fa' : 'white',
         color: state.isSelected ? 'white' : '#212529',
-        fontSize: '14px',
-        padding: '10px 12px'
+        fontSize: '13px',
+        padding: '8px 10px'
       }),
       placeholder: (provided) => ({
         ...provided,
         color: '#6c757d',
-        fontSize: '14px'
+        fontSize: '13px'
       }),
       singleValue: (provided) => ({
         ...provided,
-        fontSize: '14px'
+        fontSize: '13px'
       })
     };
 
     if (isEquipmentType) {
       return (
         <div className="equipment-section">
-          <div className="d-flex justify-content-between align-items-center mb-3">
-            <h6 className="mb-0" style={{ color: '#495057', fontWeight: '600' }}>Equipment Details</h6>
+          <div className="d-flex justify-content-between align-items-center mb-2">
+            <h6 className="mb-0" style={{ color: '#495057', fontWeight: '600', fontSize: '14px' }}>Equipment</h6>
             <button
               type="button"
               className="btn btn-success btn-sm"
               onClick={addEquipmentDetail}
-              style={{ borderRadius: '20px', fontSize: '12px', padding: '6px 16px' }}
+              style={{ borderRadius: '6px', fontSize: '12px', padding: '4px 12px' }}
             >
-              ➕ Add Equipment
+              ➕ Add
             </button>
           </div>
           
           {newEntry.equipmentDetails.length === 0 && (
-            <div className="text-center py-4" style={{ backgroundColor: '#f8f9fa', borderRadius: '8px', border: '2px dashed #dee2e6' }}>
-              <p className="text-muted mb-2">No equipment added yet</p>
+            <div className="text-center py-2" style={{ backgroundColor: '#f8f9fa', borderRadius: '6px', border: '1px dashed #dee2e6' }}>
+              <p className="text-muted mb-1" style={{ fontSize: '12px' }}>No equipment added</p>
               <button
                 type="button"
                 className="btn btn-outline-primary btn-sm"
                 onClick={addEquipmentDetail}
-                style={{ borderRadius: '20px' }}
+                style={{ borderRadius: '6px', fontSize: '12px' }}
               >
-                ➕ Add Your First Equipment
+                ➕ Add Equipment
               </button>
             </div>
           )}
 
           {newEntry.equipmentDetails.map((detail, index) => (
-            <div key={index} className="equipment-row mb-3 p-3" style={{ backgroundColor: '#f8f9fa', borderRadius: '12px', border: '1px solid #e9ecef' }}>
+            <div key={index} className="equipment-row mb-2 p-2" style={{ backgroundColor: '#f8f9fa', borderRadius: '8px', border: '1px solid #e9ecef' }}>
               <div className="row g-2 align-items-center">
                 <div className="col-md-5">
-                  <label className="form-label text-muted" style={{ fontSize: '12px', fontWeight: '600' }}>Equipment Type</label>
+                  <label className="form-label text-muted" style={{ fontSize: '11px', fontWeight: '600' }}>Type</label>
                   <Select
                     options={options}
                     value={options.find(option => option.value === detail.equipmentType) || 
@@ -586,16 +588,16 @@ function AddBooking({ auth }) {
                       }
                     }}
                     isClearable
-                    placeholder="Select or type equipment..."
+                    placeholder="Select equipment..."
                     styles={customSelectStyles}
                   />
                 </div>
                 <div className="col-md-2">
-                  <label className="form-label text-muted" style={{ fontSize: '12px', fontWeight: '600' }}>Quantity</label>
+                  <label className="form-label text-muted" style={{ fontSize: '11px', fontWeight: '600' }}>Qty</label>
                   <input
                     type="number"
                     className="form-control"
-                    style={{ borderRadius: '8px', minHeight: '42px' }}
+                    style={{ borderRadius: '6px', minHeight: '36px', fontSize: '13px' }}
                     value={detail.qty}
                     onChange={(e) => handleEquipmentDetailChange(index, "qty", e.target.value)}
                     min="1"
@@ -603,11 +605,11 @@ function AddBooking({ auth }) {
                   />
                 </div>
                 <div className="col-md-4">
-                  <label className="form-label text-muted" style={{ fontSize: '12px', fontWeight: '600' }}>Container No</label>
+                  <label className="form-label text-muted" style={{ fontSize: '11px', fontWeight: '600' }}>Container No</label>
                   <input
                     type="text"
                     className="form-control"
-                    style={{ borderRadius: '8px', minHeight: '42px' }}
+                    style={{ borderRadius: '6px', minHeight: '36px', fontSize: '13px' }}
                     value={detail.containerNo}
                     onChange={(e) => handleEquipmentDetailChange(index, "containerNo", e.target.value)}
                     placeholder="Optional"
@@ -619,7 +621,7 @@ function AddBooking({ auth }) {
                     type="button"
                     className="btn btn-danger btn-sm w-100"
                     onClick={() => removeEquipmentDetail(index)}
-                    style={{ borderRadius: '8px', minHeight: '42px' }}
+                    style={{ borderRadius: '6px', minHeight: '36px', padding: '0' }}
                   >
                     🗑️
                   </button>
@@ -631,23 +633,23 @@ function AddBooking({ auth }) {
           {/* Modal for Equipment Type */}
           <div className="modal fade" id={`${field}Modal`} tabIndex="-1" aria-labelledby={`${field}ModalLabel`} aria-hidden="true">
             <div className="modal-dialog modal-dialog-centered">
-              <div className="modal-content" style={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 40px rgba(0,0,0,0.1)' }}>
-                <div className="modal-header" style={{ borderBottom: '1px solid #e9ecef', borderRadius: '16px 16px 0 0' }}>
-                  <h5 className="modal-title" id={`${field}ModalLabel`} style={{ fontWeight: '600', color: '#495057' }}>
+              <div className="modal-content" style={{ borderRadius: '12px', border: 'none', boxShadow: '0 5px 20px rgba(0,0,0,0.1)' }}>
+                <div className="modal-header" style={{ borderBottom: '1px solid #e9ecef', borderRadius: '12px 12px 0 0', padding: '12px 16px' }}>
+                  <h5 className="modal-title" id={`${field}ModalLabel`} style={{ fontWeight: '600', color: '#495057', fontSize: '16px' }}>
                     ➕ Add New {field.charAt(0).toUpperCase() + field.slice(1)}
                   </h5>
                   <button type="button" className="btn-close" onClick={() => handleModalClose(field)} aria-label="Close"></button>
                 </div>
-                <div className="modal-body" style={{ padding: '24px' }}>
+                <div className="modal-body" style={{ padding: '16px' }}>
                   {fieldDefinitions[field].map(({ label, key, type = "text", required }) => (
-                    <div className="mb-3" key={key}>
-                      <label className="form-label" style={{ fontWeight: '600', color: '#495057' }}>
+                    <div className="mb-2" key={key}>
+                      <label className="form-label" style={{ fontWeight: '600', color: '#495057', fontSize: '13px' }}>
                         {label} {required && <span className="text-danger">*</span>}
                       </label>
                       <input
                         type={type}
                         className="form-control"
-                        style={{ borderRadius: '8px', minHeight: '42px' }}
+                        style={{ borderRadius: '6px', minHeight: '36px', fontSize: '13px' }}
                         placeholder={`Enter ${label}${key.includes("Email") ? " (comma-separated)" : ""}`}
                         value={Array.isArray(modalData[field][key]) ? modalData[field][key].join(", ") : modalData[field][key]}
                         onChange={(e) => handleModalInputChange(field, key, e.target.value)}
@@ -656,12 +658,12 @@ function AddBooking({ auth }) {
                     </div>
                   ))}
                 </div>
-                <div className="modal-footer" style={{ borderTop: '1px solid #e9ecef', padding: '16px 24px' }}>
-                  <button type="button" className="btn btn-secondary" onClick={() => handleModalClose(field)} style={{ borderRadius: '8px' }}>
+                <div className="modal-footer" style={{ borderTop: '1px solid #e9ecef', padding: '12px 16px' }}>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => handleModalClose(field)} style={{ borderRadius: '6px' }}>
                     Cancel
                   </button>
-                  <button type="button" className="btn btn-primary" onClick={() => handleAddToMaster(field)} style={{ borderRadius: '8px' }}>
-                    Save {field.charAt(0).toUpperCase() + field.slice(1)}
+                  <button type="button" className="btn btn-primary btn-sm" onClick={() => handleAddToMaster(field)} style={{ borderRadius: '6px' }}>
+                    Save
                   </button>
                 </div>
               </div>
@@ -673,7 +675,7 @@ function AddBooking({ auth }) {
 
     return (
       <div className="select-with-add">
-        <div className="d-flex align-items-end gap-2">
+        <div className="d-flex align-items-center gap-2">
           <div className="flex-grow-1">
             <Select
               options={options}
@@ -693,7 +695,7 @@ function AddBooking({ auth }) {
               }}
               onBlur={() => handleSelectBlur(field, optionsList)}
               isClearable
-              placeholder={`Select or type ${field}...`}
+              placeholder={`Select ${field}...`}
               styles={customSelectStyles}
             />
           </div>
@@ -701,7 +703,7 @@ function AddBooking({ auth }) {
             type="button"
             className="btn btn-outline-primary"
             onClick={() => openModal(field)}
-            style={{ borderRadius: '8px', minHeight: '42px', padding: '0 16px' }}
+            style={{ borderRadius: '6px', minHeight: '36px', padding: '0 12px', fontSize: '14px' }}
           >
             ➕
           </button>
@@ -710,23 +712,23 @@ function AddBooking({ auth }) {
         {/* Modal */}
         <div className="modal fade" id={`${field}Modal`} tabIndex="-1" aria-labelledby={`${field}ModalLabel`} aria-hidden="true">
           <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content" style={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 40px rgba(0,0,0,0.1)' }}>
-              <div className="modal-header" style={{ borderBottom: '1px solid #e9ecef', borderRadius: '16px 16px 0 0' }}>
-                <h5 className="modal-title" id={`${field}ModalLabel`} style={{ fontWeight: '600', color: '#495057' }}>
+            <div className="modal-content" style={{ borderRadius: '12px', border: 'none', boxShadow: '0 5px 20px rgba(0,0,0,0.1)' }}>
+              <div className="modal-header" style={{ borderBottom: '1px solid #e9ecef', borderRadius: '12px 12px 0 0', padding: '12px 16px' }}>
+                <h5 className="modal-title" id={`${field}ModalLabel`} style={{ fontWeight: '600', color: '#495057', fontSize: '16px' }}>
                   ➕ Add New {field.charAt(0).toUpperCase() + field.slice(1)}
                 </h5>
                 <button type="button" className="btn-close" onClick={() => handleModalClose(field)} aria-label="Close"></button>
               </div>
-              <div className="modal-body" style={{ padding: '24px' }}>
+              <div className="modal-body" style={{ padding: '16px' }}>
                 {fieldDefinitions[field].map(({ label, key, type = "text", required }) => (
-                  <div className="mb-3" key={key}>
-                    <label className="form-label" style={{ fontWeight: '600', color: '#495057' }}>
+                  <div className="mb-2" key={key}>
+                    <label className="form-label" style={{ fontWeight: '600', color: '#495057', fontSize: '13px' }}>
                       {label} {required && <span className="text-danger">*</span>}
                     </label>
                     <input
                       type={type}
                       className="form-control"
-                      style={{ borderRadius: '8px', minHeight: '42px' }}
+                      style={{ borderRadius: '6px', minHeight: '36px', fontSize: '13px' }}
                       placeholder={`Enter ${label}${key.includes("Email") ? " (comma-separated)" : ""}`}
                       value={Array.isArray(modalData[field][key]) ? modalData[field][key].join(", ") : modalData[field][key]}
                       onChange={(e) => handleModalInputChange(field, key, e.target.value)}
@@ -735,12 +737,12 @@ function AddBooking({ auth }) {
                   </div>
                 ))}
               </div>
-              <div className="modal-footer" style={{ borderTop: '1px solid #e9ecef', padding: '16px 24px' }}>
-                <button type="button" className="btn btn-secondary" onClick={() => handleModalClose(field)} style={{ borderRadius: '8px' }}>
+              <div className="modal-footer" style={{ borderTop: '1px solid #e9ecef', padding: '12px 16px' }}>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => handleModalClose(field)} style={{ borderRadius: '6px' }}>
                   Cancel
                 </button>
-                <button type="button" className="btn btn-primary" onClick={() => handleAddToMaster(field)} style={{ borderRadius: '8px' }}>
-                  Save {field.charAt(0).toUpperCase() + field.slice(1)}
+                <button type="button" className="btn btn-primary btn-sm" onClick={() => handleAddToMaster(field)} style={{ borderRadius: '6px' }}>
+                  Save
                 </button>
               </div>
             </div>
@@ -751,7 +753,6 @@ function AddBooking({ auth }) {
   };
 
   const handleSelectBlur = (field, optionsList) => {
-    // If the current value is not in the options, reset it
     const validOptions = optionsList.map(opt => opt.toUpperCase());
     if (!validOptions.includes((newEntry[field] || '').toUpperCase())) {
       setNewEntry({ ...newEntry, [field]: '' });
@@ -764,348 +765,167 @@ function AddBooking({ auth }) {
   };
 
   return (
-    <div className="container-fluid py-4">
+    <div className="container-fluid py-2">
       <style>{`
-        .form-section {
-          background: white;
-          border-radius: 16px;
-          padding: 24px;
-          margin-bottom: 24px;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-          border: 1px solid #e9ecef;
-        }
-        .form-section {
-          background: white;
-          border-radius: 16px;
-          padding: 24px;
-          margin-bottom: 24px;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-          border: 1px solid #e9ecef;
-        }
-        .section-title {
+        .section-title-compact {
           color: #495057;
           font-weight: 700;
-          font-size: 18px;
-          margin-bottom: 20px;
-          padding-bottom: 10px;
-          border-bottom: 2px solid #e9ecef;
+          font-size: 16px;
+          margin-bottom: 8px;
+          margin-top: 12px;
+          padding-bottom: 2px;
+          border-bottom: 1px solid #e9ecef;
         }
-        .form-label {
-          font-weight: 600;
-          color: #495057;
-          font-size: 13px;
-          margin-bottom: 6px;
-        }
-        .form-control {
-          border-radius: 8px;
-          border: 1px solid #ced4da;
-          min-height: 42px;
-          font-size: 14px;
-          transition: all 0.2s ease;
-        }
-        .form-control:focus {
-          border-color: #0d6efd;
-          box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
-        }
-        .equipment-section {
-          background: #f8f9fa;
-          border-radius: 12px;
-          padding: 20px;
-          border: 1px solid #e9ecef;
-        }
-        .equipment-row {
-          transition: all 0.2s ease;
-        }
-        .equipment-row:hover {
-          transform: translateY(-1px);
-          box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-        }
-        .btn {
-          border-radius: 8px;
-          font-weight: 600;
-          transition: all 0.2s ease;
-        }
-        .btn:hover {
-          transform: translateY(-1px);
-        }
-        .main-header {
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          color: white;
-          border-radius: 16px;
-          padding: 24px;
-          margin-bottom: 32px;
-          box-shadow: 0 8px 32px rgba(102, 126, 234, 0.3);
-        }
-        .submit-section {
+        .booking-form-compact {
           background: white;
-          border-radius: 16px;
-          padding: 24px;
-          text-align: center;
-          box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+          border-radius: 8px;
+          padding: 12px 16px 8px 16px;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.04);
           border: 1px solid #e9ecef;
+          margin-bottom: 0;
+        }
+        .form-grid-compact {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 10px;
+        }
+        .form-label-compact {
+          font-weight: 500;
+          color: #495057;
+          font-size: 14px;
+          margin-bottom: 3px;
+        }
+        .form-control-compact, .react-select__control {
+          border-radius: 5px;
+          border: 1px solid #ced4da;
+          min-height: 36px;
+          font-size: 15px;
+          padding: 5px 10px;
+        }
+        .equipment-section-compact {
+          background: #f8f9fa;
+          border-radius: 6px;
+          padding: 8px 10px 4px 10px;
+          border: 1px solid #e9ecef;
+          margin-bottom: 0;
+        }
+        .submit-btn-compact {
+          font-weight: 600;
+          padding: 8px 0;
+          border-radius: 6px;
+          font-size: 16px;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          border: none;
+          width: 100%;
         }
         .required-indicator {
           color: #dc3545;
           font-weight: bold;
+          font-size: 13px;
         }
-        .optional-indicator {
-          color: #6c757d;
-          font-size: 11px;
-          font-style: italic;
+        @media (max-width: 1200px) {
+          .form-grid-compact { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (max-width: 768px) {
+          .form-grid-compact { grid-template-columns: 1fr; }
         }
       `}</style>
-
-      {/* Header Section */}
-      <div className="main-header">
-        <div className="row align-items-center">
-          <div className="col-md-8">
-            <h1 className="mb-2" style={{ fontWeight: '700', fontSize: '28px' }}>
-              📋 Add New Booking Entry
-            </h1>
-            <p className="mb-0 opacity-90" style={{ fontSize: '16px' }}>
-              Create a new booking entry with all necessary details
-            </p>
-          </div>
-          <div className="col-md-4 text-end">
-            <div className="d-flex justify-content-end gap-2">
-              <span className="badge bg-light text-dark px-3 py-2" style={{ fontSize: '12px' }}>
-                📊 Form Status: {Object.values(newEntry).filter(v => v && v !== "").length + newEntry.equipmentDetails.length}/15 Fields
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <form className="booking-form">
-        {/* Basic Information Section */}
-        <div className="form-section">
-          <h3 className="section-title">🏢 Basic Information</h3>
-          <div className="row g-3">
-            <div className="col-md-4">
-              <label className="form-label">
-                Location <span className="required-indicator">*</span>
-              </label>
-              <div className="d-flex align-items-center gap-2">
-                {createSelect("location", masterData.locations)}
-                <div className="form-check ms-2">
-                  <input
-                    className="form-check-input"
-                    type="checkbox"
-                    id="nominationCheckbox"
-                    checked={newEntry.isNominated}
-                    onChange={handleNominationChange}
-                  />
-                  <label className="form-check-label" htmlFor="nominationCheckbox">
-                    Nomination
-                  </label>
-                </div>
+      <form className="booking-form-compact">
+        {/* 🏢 Basic Information */}
+        <div className="section-title-compact">🏢 Basic Information</div>
+        <div className="form-grid-compact mb-2" style={{gridTemplateColumns: 'repeat(4, 1fr)'}}>
+          <div>
+            <label className="form-label-compact">Location <span className="required-indicator">*</span></label>
+            <div className="d-flex align-items-center gap-2">
+              {createSelect("location", masterData.locations)}
+              <div className="d-flex align-items-center ms-2">
+                <input className="form-check-input me-1" type="checkbox" id="nominationCheckbox" checked={newEntry.isNominated} onChange={handleNominationChange} style={{width:14, height:14}} />
+                <label className="form-label-compact mb-0" htmlFor="nominationCheckbox">Nominated</label>
               </div>
             </div>
-            <div className="col-md-4">
-              <label className="form-label">
-                Booking Date <span className="optional-indicator">(Optional)</span>
-              </label>
-              <input
-                type="date"
-                className="form-control"
-                value={newEntry.bookingDate}
-                onChange={(e) => handleChange("bookingDate", e.target.value)}
-              />
-            </div>
-            <div className="col-md-4">
-              <label className="form-label">
-                Customer <span className="required-indicator">*</span>
-              </label>
-              {createSelect("customer", masterData.customers)}
-            </div>
+          </div>
+          <div>
+            <label className="form-label-compact">Line <span className="required-indicator">*</span></label>
+            {createSelect("line", masterData.lines)}
+          </div>
+          <div>
+            <label className="form-label-compact">Customer <span className="required-indicator">*</span></label>
+            {createSelect("customer", masterData.customers)}
+          </div>
+          <div>
+            <label className="form-label-compact">Reference</label>
+            <input type="text" className="form-control-compact form-control" value={newEntry.referenceNo} onChange={e => handleChange("referenceNo", e.target.value)} placeholder="Reference" />
           </div>
         </div>
-
-        {/* Booking Details Section */}
-        <div className="form-section">
-          <h3 className="section-title">📋 Booking Details</h3>
-          <div className="row g-3">
-            <div className="col-md-4">
-              <label className="form-label">
-                Booking Validity <span className="optional-indicator">(Optional)</span>
-              </label>
-              <input
-                type="date"
-                className="form-control"
-                value={newEntry.bookingValidity}
-                onChange={(e) => handleChange("bookingValidity", e.target.value)}
-              />
-            </div>
-            <div className="col-md-4">
-              <label className="form-label">
-                Shipping Line <span className="required-indicator">*</span>
-              </label>
-              {createSelect("line", masterData.lines)}
-            </div>
-            <div className="col-md-4">
-              <label className="form-label">
-                Booking Number <span className="required-indicator">*</span>
-              </label>
-              <input
-                type="text"
-                className="form-control"
-                value={newEntry.bookingNo}
-                onChange={(e) => handleChange("bookingNo", e.target.value)}
-                placeholder="Enter booking number"
-              />
-            </div>
-            <div className="col-md-4">
-              <label className="form-label">
-                Reference NO <span className="optional-indicator">(Optional)</span>
-              </label>
-              <input
-                type="text"
-                className="form-control"
-                value={newEntry.referenceNo}
-                onChange={(e) => handleChange("referenceNo", e.target.value)}
-                placeholder="Enter reference number (optional)"
-              />
-            </div>
+        {/* 📋 Booking Details */}
+        <div className="section-title-compact">📋 Booking Details</div>
+        <div className="form-grid-compact mb-2">
+          <div>
+            <label className="form-label-compact">Booking No <span className="required-indicator">*</span></label>
+            <input type="text" className="form-control-compact form-control" value={newEntry.bookingNo} onChange={e => handleChange("bookingNo", e.target.value)} placeholder="Booking no" />
           </div>
-        </div>
-
-        {/* Port Information Section */}
-        <div className="form-section">
-          <h3 className="section-title">🚢 Port Information</h3>
-          <div className="row g-3">
-            <div className="col-md-4">
-              <label className="form-label">
-                Port of Loading (POL) <span className="required-indicator">*</span>
-              </label>
-              {createSelect("pol", masterData.pols)}
-            </div>
-            <div className="col-md-4">
-              <label className="form-label">
-                Port of Discharge (POD) <span className="required-indicator">*</span>
-              </label>
-              {createSelect("pod", masterData.pods)}
-            </div>
-            <div className="col-md-4">
-              <label className="form-label">
-                Final Port of Discharge (FPOD) <span className="required-indicator">*</span>
-              </label>
-              {createSelect("fpod", masterData.fpods)}
-            </div>
+          <div>
+            <label className="form-label-compact">Booking Date</label>
+            <input type="date" className="form-control-compact form-control" value={newEntry.bookingDate} onChange={e => handleChange("bookingDate", e.target.value)} />
           </div>
+          <div>
+            <label className="form-label-compact">Booking Validity</label>
+            <input type="date" className="form-control-compact form-control" value={newEntry.bookingValidity} onChange={e => handleChange("bookingValidity", e.target.value)} />
+          </div>
+          <div></div>
         </div>
-
-        {/* Equipment Details Section */}
-        <div className="form-section">
-          <h3 className="section-title">📦 Equipment Details</h3>
+        {/* 🚢 Port Information */}
+        <div className="section-title-compact">🚢 Port Information</div>
+        <div className="form-grid-compact mb-2">
+          <div>
+            <label className="form-label-compact">POL <span className="required-indicator">*</span></label>
+            {createSelect("pol", masterData.pols)}
+          </div>
+          <div>
+            <label className="form-label-compact">POD <span className="required-indicator">*</span></label>
+            {createSelect("pod", masterData.pods)}
+          </div>
+          <div>
+            <label className="form-label-compact">FPOD <span className="required-indicator">*</span></label>
+            {createSelect("fpod", masterData.fpods)}
+          </div>
+          <div></div>
+        </div>
+        {/* 📦 Equipment Details */}
+        <div className="section-title-compact">📦 Equipment Details</div>
+        <div className="equipment-section-compact mb-2">
           {createSelect("equipmentType", masterData.equipmentTypes)}
         </div>
-
-        {/* Vessel Information Section */}
-        <div className="form-section">
-          <h3 className="section-title">🚢 Vessel Information</h3>
-          <div className="row g-3">
-            <div className="col-md-6">
-              <label className="form-label">
-                Vessel Name <span className="required-indicator">*</span>
-              </label>
-              {createSelect("vessel", masterData.vessels)}
-            </div>
-            <div className="col-md-6">
-              <label className="form-label">
-                Voyage Number <span className="optional-indicator">(Optional)</span>
-              </label>
-              <input
-                type="text"
-                className="form-control"
-                value={newEntry.voyage}
-                onChange={(e) => handleChange("voyage", e.target.value)}
-                placeholder="Enter voyage number"
-              />
-            </div>
+        {/* 🚢 Vessel & ⏰ Cut-off Information */}
+        <div className="section-title-compact">🚢 Vessel & ⏰ Cut-off Information</div>
+        <div className="form-grid-compact mb-2" style={{gridTemplateColumns: 'repeat(5, 1fr)'}}>
+          <div>
+            <label className="form-label-compact">Vessel <span className="required-indicator">*</span></label>
+            {createSelect("vessel", masterData.vessels)}
+          </div>
+          <div style={{maxWidth: '120px'}}>
+            <label className="form-label-compact">Voyage</label>
+            <input type="text" className="form-control-compact form-control" value={newEntry.voyage} onChange={e => handleChange("voyage", e.target.value)} placeholder="Voyage" style={{width: '100%'}} />
+          </div>
+          <div>
+            <label className="form-label-compact">Port Cut-off</label>
+            <input type="text" className="form-control-compact form-control" placeholder="DDMMHHMM → 06/06-1800 HRS" value={newEntry.portCutOff} onChange={e => handleCutOffChange("portCutOff", e.target.value)} />
+          </div>
+          <div>
+            <label className="form-label-compact">SI Cut-off</label>
+            <input type="text" className="form-control-compact form-control" placeholder="DDMMHHMM → 06/06-1800 HRS" value={newEntry.siCutOff} onChange={e => handleCutOffChange("siCutOff", e.target.value)} />
+          </div>
+          <div>
+            <label className="form-label-compact">ETD</label>
+            <input type="date" className="form-control-compact form-control" value={newEntry.etd} onChange={e => handleChange("etd", e.target.value)} />
           </div>
         </div>
-
-        {/* Cut-off Times Section */}
-        <div className="form-section">
-          <h3 className="section-title">⏰ Cut-off Information</h3>
-          <div className="row g-3">
-            <div className="col-md-4">
-              <label className="form-label">
-                Port Cut-off <span className="optional-indicator">(DD/MM-HHMM HRS)</span>
-              </label>
-              <input
-                type="text"
-                className="form-control"
-                placeholder="e.g., 06061800 → 06/06-1800 HRS"
-                value={newEntry.portCutOff}
-                onChange={(e) => handleCutOffChange("portCutOff", e.target.value)}
-              />
-              <small className="text-muted">Format: DDMMHHMM (e.g., 06061800)</small>
-            </div>
-            <div className="col-md-4">
-              <label className="form-label">
-                SI Cut-off <span className="optional-indicator">(DD/MM-HHMM HRS)</span>
-              </label>
-              <input
-                type="text"
-                className="form-control"
-                placeholder="e.g., 06061800 → 06/06-1800 HRS"
-                value={newEntry.siCutOff}
-                onChange={(e) => handleCutOffChange("siCutOff", e.target.value)}
-              />
-              <small className="text-muted">Format: DDMMHHMM (e.g., 06061800)</small>
-            </div>
-            <div className="col-md-4">
-              <label className="form-label">
-                ETD / Sailing Date <span className="optional-indicator">(Optional)</span>
-              </label>
-              <input
-                type="date"
-                className="form-control"
-                value={newEntry.etd}
-                onChange={(e) => handleChange("etd", e.target.value)}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Submit Section */}
-        <div className="submit-section">
-          <div className="row align-items-center">
-            <div className="col-md-8">
-              <h5 className="mb-2" style={{ color: '#495057', fontWeight: '600' }}>Ready to Submit?</h5>
-              <p className="text-muted mb-0">
-                Please ensure all required fields are filled before submitting the booking entry.
-              </p>
-            </div>
-            <div className="col-md-4 text-end">
-              <button
-                className="btn btn-primary btn-lg px-5"
-                type="button"
-                onClick={handleAddEntry}
-                disabled={isSubmitting}
-                style={{
-                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                  border: 'none',
-                  borderRadius: '12px',
-                  fontWeight: '700',
-                  fontSize: '16px',
-                  padding: '12px 32px',
-                  boxShadow: '0 4px 16px rgba(102, 126, 234, 0.3)'
-                }}
-              >
-                {isSubmitting ? (
-                  <>
-                    <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                    Adding Entry...
-                  </>
-                ) : (
-                  <>
-                    ✅ Add Booking Entry
-                  </>
-                )}
-              </button>
-            </div>
+        {/* Submit Button */}
+        <div className="row mt-2">
+          <div className="col-12">
+            <button className="btn btn-primary submit-btn-compact" type="button" onClick={handleAddEntry} disabled={isSubmitting}>
+              {isSubmitting ? (<><span className="spinner-border spinner-border-sm me-2" role="status"></span>Adding...</>) : '✅ Add Booking'}
+            </button>
           </div>
         </div>
       </form>
