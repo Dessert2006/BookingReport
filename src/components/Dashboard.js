@@ -228,7 +228,8 @@ const Dashboard = () => {
         const dateStr = entry.invoiceDueDate || entry.etd;
         if (!dateStr) return false;
         const date = new Date(dateStr);
-        return date < today;
+        // Only show if firstPrinted is checked
+        return entry.firstPrinted && date < today;
       }).length;
       const pendingDG = activeEntries.filter(entry => {
         const volume = entry.volume || "";
@@ -359,6 +360,8 @@ const Dashboard = () => {
           const dateStr = entry.invoiceDueDate || entry.etd;
           if (!dateStr) return false;
           const date = new Date(dateStr);
+          // Only show if firstPrinted is checked
+          if (!entry.firstPrinted) return false;
           return date < new Date();
         });
         title = 'Pending Invoice';
@@ -1007,13 +1010,14 @@ const Dashboard = () => {
                     <th>BL Released</th>
                     <th>Final DG</th>
                     <th>BL Type</th>
+                    <th>Liner Invoice</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredViewData.length === 0 ? (
                     <tr>
-                      <td colSpan="16" className="text-center py-4">
+                      <td colSpan="17" className="text-center py-4">
                         {searchQuery ? (
                           <div>
                             <p>🔍 No entries found matching your search criteria.</p>
@@ -1157,6 +1161,20 @@ const Dashboard = () => {
                             />
                           ) : (
                             entry.blType || 'N/A'
+                          )}
+                        </td>
+                        <td>
+                          {editingEntry?.id === entry.id ? (
+                            <input 
+                              type="checkbox"
+                              checked={editingEntry.linerInvoice || false}
+                              onChange={(e) => handleCheckboxEdit(entry, 'linerInvoice', e.target.checked)}
+                              className="form-check-input"
+                            />
+                          ) : (
+                            <span className={`badge ${entry.linerInvoice ? 'bg-success' : 'bg-danger'}`}>
+                              {entry.linerInvoice ? 'Yes' : 'No'}
+                            </span>
                           )}
                         </td>
                         <td>
