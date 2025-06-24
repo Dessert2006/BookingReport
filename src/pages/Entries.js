@@ -1363,7 +1363,8 @@ function Entries(props) {
 
   const getRowClassName = (params) => {
     const row = params.row;
-    return !row.portCutOff && !row.siCutOff ? "highlight-row" : "";
+    // Highlight if either portCutOff or siCutOff is empty
+    return (!row.portCutOff || !row.siCutOff) ? "highlight-row" : "";
   };
 
   const handleTouchStart = (e) => {
