@@ -1170,7 +1170,7 @@ const Dashboard = () => {
                             <input 
                               type="checkbox"
                               checked={editingEntry.linerInvoice || false}
-                              onChange={(e) => handleCheckboxEdit(entry, 'linerInvoice', e.target.checked)}
+                              onChange={(e) => setEditingEntry({...editingEntry, linerInvoice: e.target.checked})}
                               className="form-check-input"
                             />
                           ) : (
