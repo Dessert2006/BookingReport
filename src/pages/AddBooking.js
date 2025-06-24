@@ -290,10 +290,27 @@ function AddBooking({ auth }) {
     closeModal(field);
   };
 
+  const normalizeBookingNo = (str) => {
+    if (!str) return '';
+    return str.toString().toLowerCase().replace(/[^a-z0-9]/gi, '');
+  };
+
   const checkBookingNoExists = async (bookingNo) => {
-    const q = query(collection(db, "entries"), where("bookingNo", "==", bookingNo));
+    if (!bookingNo) return false;
+    // Fetch all entries with the same normalized bookingNo
+    const q = query(collection(db, "entries"));
     const querySnapshot = await getDocs(q);
-    return !querySnapshot.empty;
+    const normalizedInput = normalizeBookingNo(bookingNo);
+    return querySnapshot.docs.some(docSnap => normalizeBookingNo(docSnap.data().bookingNo) === normalizedInput);
+  };
+
+  const handleBookingNoBlur = async (e) => {
+    const bookingNo = e.target.value;
+    if (!bookingNo) return;
+    const exists = await checkBookingNoExists(bookingNo);
+    if (exists) {
+      toast.error("Booking No already exists. Please enter a unique Booking No.");
+    }
   };
 
   const handleAddEntry = async () => {
@@ -862,7 +879,7 @@ function AddBooking({ auth }) {
         <div className="form-grid-compact mb-2">
           <div>
             <label className="form-label-compact">Booking No <span className="required-indicator">*</span></label>
-            <input type="text" className="form-control-compact form-control" value={newEntry.bookingNo} onChange={e => handleChange("bookingNo", e.target.value)} placeholder="Booking no" />
+            <input type="text" className="form-control-compact form-control" value={newEntry.bookingNo} onChange={e => handleChange("bookingNo", e.target.value)} onBlur={handleBookingNoBlur} placeholder="Booking no" />
           </div>
           <div>
             <label className="form-label-compact">Booking Date</label>
