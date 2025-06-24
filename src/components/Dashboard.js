@@ -228,8 +228,8 @@ const Dashboard = () => {
         const dateStr = entry.invoiceDueDate || entry.etd;
         if (!dateStr) return false;
         const date = new Date(dateStr);
-        // Only show if firstPrinted is checked
-        return entry.firstPrinted && date < today;
+        // Only show if firstPrinted is checked AND linerInvoice is unchecked
+        return entry.firstPrinted && !entry.linerInvoice && date < today;
       }).length;
       const pendingDG = activeEntries.filter(entry => {
         const volume = entry.volume || "";
@@ -360,8 +360,9 @@ const Dashboard = () => {
           const dateStr = entry.invoiceDueDate || entry.etd;
           if (!dateStr) return false;
           const date = new Date(dateStr);
-          // Only show if firstPrinted is checked
+          // Only show if firstPrinted is checked AND linerInvoice is unchecked
           if (!entry.firstPrinted) return false;
+          if (entry.linerInvoice) return false;
           return date < new Date();
         });
         title = 'Pending Invoice';
@@ -410,6 +411,7 @@ const Dashboard = () => {
         finalDG: Boolean(updatedRow.finalDG),
         blType: updatedRow.blType || "",
         blNo: updatedRow.blNo || "",
+        linerInvoice: Boolean(updatedRow.linerInvoice), // <-- ensure linerInvoice is updated
       };
 
       if (typeof updatedRow.customer === 'string') {
