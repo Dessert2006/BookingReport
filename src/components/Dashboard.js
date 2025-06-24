@@ -375,6 +375,14 @@ const Dashboard = () => {
         return;
     }
 
+    // Sort by earliest ETD (ascending)
+    filteredData = filteredData.sort((a, b) => {
+      if (!a.etd && !b.etd) return 0;
+      if (!a.etd) return 1;
+      if (!b.etd) return -1;
+      return new Date(a.etd) - new Date(b.etd);
+    });
+
     setOriginalFilteredData(filteredData);
     setFilteredViewData(filteredData);
     setFilterType(title);
