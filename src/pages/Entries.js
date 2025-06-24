@@ -1028,29 +1028,31 @@ function Entries(props) {
     ),
   });
 
-  // Add See Audit button as the first column
-  allColumns = [
-    {
-      field: "seeAudit",
-      headerName: "See Audit",
-      sortable: false,
-      filterable: false,
-      width: 110,
-      renderCell: (params) => (
-        <Button
-          variant="outlined"
-          size="small"
-          onClick={() => {
-            setSelectedEntry(params.row);
-            setAuditDialogOpen(true);
-          }}
-        >
-          See Audit
-        </Button>
-      ),
-    },
-    ...allColumns,
-  ];
+  // Add See Audit button as the first column ONLY for admin users
+  if (props.auth?.isAdmin || props.auth?.role === "admin") {
+    allColumns = [
+      {
+        field: "seeAudit",
+        headerName: "See Audit",
+        sortable: false,
+        filterable: false,
+        width: 110,
+        renderCell: (params) => (
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={() => {
+              setSelectedEntry(params.row);
+              setAuditDialogOpen(true);
+            }}
+          >
+            See Audit
+          </Button>
+        ),
+      },
+      ...allColumns,
+    ];
+  }
 
   const handleDeleteClick = (row) => {
     setRowToDelete(row);
