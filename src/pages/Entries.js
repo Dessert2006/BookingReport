@@ -255,6 +255,11 @@ function Entries(props) {
     });
   };
 
+  const normalizeForSearch = (str) => {
+    if (!str) return '';
+    return str.toString().toLowerCase().replace(/[^a-z0-9]/gi, '');
+  };
+
   const applyFilters = () => {
     let filtered = [...entries];
 
@@ -269,6 +274,7 @@ function Entries(props) {
       const tokens = parseAdvancedQuery(searchQuery);
       filtered = filtered.filter((entry) => {
         return tokens.every(token => {
+          const normalizedToken = normalizeForSearch(token);
           const textFields = [
             "location", "customer", "line", "pol", "pod", "fpod", "vessel",
             "bookingNo", "containerNo", "volume", "voyage", "blNo", "equipmentType",
@@ -276,7 +282,7 @@ function Entries(props) {
           ];
           const textMatch = textFields.some(field => {
             const value = typeof entry[field] === 'object' ? entry[field]?.name : entry[field];
-            return value && value.toString().toLowerCase().includes(token);
+            return value && normalizeForSearch(value).includes(normalizedToken);
           });
 
           const dateFields = ["bookingDate", "bookingValidity", "etd", "sobDate"];
