@@ -1209,10 +1209,6 @@ function Entries(props) {
       return;
     }
     if (field === "firstPrinted" && value) {
-      if (!row.siFiled) {
-        toast.error("Please tick SI Filed before First Print.");
-        return;
-      }
       setCurrentRow(row);
       setOpenDialog(true);
     } else if (field === "correctionsFinalised" && value) {
@@ -1223,8 +1219,8 @@ function Entries(props) {
       const newRow = { ...row, [field]: value };
       await handleProcessRowUpdate(newRow, row);
     } else if (field === "linerInvoice" && value) {
-      if (!row.correctionsFinalised) {
-        toast.error("Please tick Corrections Finalised before Liner Invoice.");
+      if (!row.firstPrinted) {
+        toast.error("Please tick First Print before Liner Invoice.");
         return;
       }
       const newRow = { ...row, [field]: value };
