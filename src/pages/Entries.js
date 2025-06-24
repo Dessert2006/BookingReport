@@ -956,14 +956,14 @@ function Entries(props) {
         editable: true,
         renderCell: (params) => {
           const entryFpod = params.row.fpod || "";
+          // Check for USA or United States (case-insensitive)
+          const fpodString = entryFpod.toUpperCase();
           const matchingFpod = fpodMaster.find(
-            (fpod) => fpod.toUpperCase() === entryFpod.toUpperCase()
+            (fpod) => fpod.toUpperCase() === fpodString
           );
-
-          if (
-            (matchingFpod && matchingFpod.toUpperCase().includes("USA")) ||
-            entryFpod.toUpperCase().includes("USA")
-          ) {
+          const isUS = /\b(USA|UNITED STATES)\b/i.test(entryFpod) ||
+            (matchingFpod && /\b(USA|UNITED STATES)\b/i.test(matchingFpod));
+          if (isUS) {
             return (
               <Checkbox
                 checked={!!params.row.isfSent}
@@ -1230,13 +1230,14 @@ function Entries(props) {
     } else if (field === "blReleased" && value) {
       const fieldsToCheck = [...prerequisiteFields];
       const entryFpod = row.fpod || "";
+      // Check for USA or United States (case-insensitive)
+      const fpodString = entryFpod.toUpperCase();
       const matchingFpod = fpodMaster.find(
-        (fpod) => fpod.toUpperCase() === entryFpod.toUpperCase()
+        (fpod) => fpod.toUpperCase() === fpodString
       );
-      if (
-        (matchingFpod && matchingFpod.toUpperCase().includes("USA")) ||
-        entryFpod.toUpperCase().includes("USA")
-      ) {
+      const isUS = /\b(USA|UNITED STATES)\b/i.test(entryFpod) ||
+        (matchingFpod && /\b(USA|UNITED STATES)\b/i.test(matchingFpod));
+      if (isUS) {
         fieldsToCheck.push("isfSent");
       }
 
