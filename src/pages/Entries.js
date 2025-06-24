@@ -961,8 +961,8 @@ function Entries(props) {
           const matchingFpod = fpodMaster.find(
             (fpod) => fpod.toUpperCase() === fpodString
           );
-          const isUS = /\b(USA|UNITED STATES)\b/i.test(entryFpod) ||
-            (matchingFpod && /\b(USA|UNITED STATES)\b/i.test(matchingFpod));
+          const isUS = /\b(USA|UNITED STATES|UNITED STATES OF AMERICA)\b/i.test(entryFpod) ||
+            (matchingFpod && /\b(USA|UNITED STATES|UNITED STATES OF AMERICA)\b/i.test(matchingFpod));
           if (isUS) {
             return (
               <Checkbox
@@ -1237,8 +1237,8 @@ function Entries(props) {
       const matchingFpod = fpodMaster.find(
         (fpod) => fpod.toUpperCase() === fpodString
       );
-      const isUS = /\b(USA|UNITED STATES)\b/i.test(entryFpod) ||
-        (matchingFpod && /\b(USA|UNITED STATES)\b/i.test(matchingFpod));
+      const isUS = /\b(USA|UNITED STATES|UNITED STATES OF AMERICA)\b/i.test(entryFpod) ||
+        (matchingFpod && /\b(USA|UNITED STATES|UNITED STATES OF AMERICA)\b/i.test(matchingFpod));
       if (isUS) {
         fieldsToCheck.push("isfSent");
       }
