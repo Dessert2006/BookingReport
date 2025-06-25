@@ -1001,10 +1001,10 @@ const Dashboard = () => {
                     <th>Customer</th>
                     <th>Line</th>
                     <th>POL</th>
-                    <th>POD</th>
                     <th>FPOD</th>
                     <th>Vessel</th>
                     <th>Volume</th>
+                    <th>SI Cut Off</th>
                     <th>ETD</th>
                     <th>SI Filed</th>
                     <th>First Printed</th>
@@ -1065,7 +1065,6 @@ const Dashboard = () => {
                         </td>
                         <td>{entry.line || 'N/A'}</td>
                         <td>{entry.pol || 'N/A'}</td>
-                        <td>{entry.pod || 'N/A'}</td>
                         <td>{entry.fpod || 'N/A'}</td>
                         <td>{entry.vessel || 'N/A'}</td>
                         <td>
@@ -1079,6 +1078,7 @@ const Dashboard = () => {
                             entry.volume || 'N/A'
                           )}
                         </td>
+                        <td>{entry.siCutOff || 'N/A'}</td>
                         <td>{formatDate(entry.etd) || 'N/A'}</td>
                         <td>
                           {editingEntry?.id === entry.id ? (
