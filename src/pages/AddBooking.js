@@ -51,6 +51,8 @@ function AddBooking({ auth }) {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [customers, setCustomers] = useState([]);
+  // State to store all sales persons from master customer
+  const [salesPersons, setSalesPersons] = useState([]);
 
   const fieldDefinitions = {
     location: [{ label: "Location Name", key: "name", required: true }],
@@ -121,6 +123,33 @@ function AddBooking({ auth }) {
       setCustomers(customerSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     };
     fetchCustomers();
+  }, []);
+
+  // Fetch all sales persons from Firestore on mount
+  useEffect(() => {
+    const fetchSalesPersons = async () => {
+      try {
+        const docRef = doc(db, "newMaster", "customer");
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const list = docSnap.data().list || [];
+          // Extract unique sales person names and their emails (case-insensitive, trimmed)
+          const map = {};
+          list.forEach(item => {
+            if (item.salesPerson && item.salesPersonEmail && item.salesPersonEmail.length > 0) {
+              const normName = item.salesPerson.trim().toUpperCase();
+              if (!map[normName]) {
+                map[normName] = { name: item.salesPerson.trim(), emails: item.salesPersonEmail };
+              }
+            }
+          });
+          setSalesPersons(Object.values(map));
+        }
+      } catch (err) {
+        // ignore
+      }
+    };
+    fetchSalesPersons();
   }, []);
 
   const formatCutOffInput = (value) => {
@@ -663,15 +692,56 @@ function AddBooking({ auth }) {
                       <label className="form-label" style={{ fontWeight: '600', color: '#495057', fontSize: '13px' }}>
                         {label} {required && <span className="text-danger">*</span>}
                       </label>
-                      <input
-                        type={type}
-                        className="form-control"
-                        style={{ borderRadius: '6px', minHeight: '36px', fontSize: '13px' }}
-                        placeholder={`Enter ${label}${key.includes("Email") ? " (comma-separated)" : ""}`}
-                        value={Array.isArray(modalData[field][key]) ? modalData[field][key].join(", ") : modalData[field][key]}
-                        onChange={(e) => handleModalInputChange(field, key, e.target.value)}
-                        required={required}
-                      />
+                      {/* For salesPerson, use a single input with datalist for suggestions */}
+                      {field === 'customer' && key === 'salesPerson' && salesPersons.length > 0 ? (
+                        <>
+                          <input
+                            type="text"
+                            className="form-control"
+                            list="salesPersonList"
+                            placeholder="Type or select sales person name"
+                            value={modalData.customer.salesPerson}
+                            onChange={e => {
+                              const val = e.target.value;
+                              const selected = salesPersons.find(sp => sp.name === val);
+                              setModalData({
+                                ...modalData,
+                                customer: {
+                                  ...modalData.customer,
+                                  salesPerson: val,
+                                  salesPersonEmail: selected ? selected.emails : []
+                                }
+                              });
+                              if (!selected) {
+                                setModalData(prev => ({
+                                  ...prev,
+                                  customer: {
+                                    ...prev.customer,
+                                    salesPerson: val,
+                                    salesPersonEmail: []
+                                  }
+                                }));
+                              }
+                            }}
+                            style={{ textTransform: 'uppercase' }}
+                          />
+                          <datalist id="salesPersonList">
+                            {salesPersons.map(sp => (
+                              <option key={sp.name} value={sp.name} />
+                            ))}
+                          </datalist>
+                        </>
+                      ) : (
+                        <input
+                          type={type}
+                          className="form-control"
+                          style={{ borderRadius: '6px', minHeight: '36px', fontSize: '13px' }}
+                          placeholder={`Enter ${label}${key.includes("Email") ? " (comma-separated)" : ""}`}
+                          value={Array.isArray(modalData[field][key]) ? modalData[field][key].join(", ") : modalData[field][key]}
+                          onChange={(e) => handleModalInputChange(field, key, e.target.value)}
+                          required={required}
+                        />
+                      )}
                     </div>
                   ))}
                 </div>
@@ -742,15 +812,56 @@ function AddBooking({ auth }) {
                     <label className="form-label" style={{ fontWeight: '600', color: '#495057', fontSize: '13px' }}>
                       {label} {required && <span className="text-danger">*</span>}
                     </label>
-                    <input
-                      type={type}
-                      className="form-control"
-                      style={{ borderRadius: '6px', minHeight: '36px', fontSize: '13px' }}
-                      placeholder={`Enter ${label}${key.includes("Email") ? " (comma-separated)" : ""}`}
-                      value={Array.isArray(modalData[field][key]) ? modalData[field][key].join(", ") : modalData[field][key]}
-                      onChange={(e) => handleModalInputChange(field, key, e.target.value)}
-                      required={required}
-                    />
+                    {/* For salesPerson, use a single input with datalist for suggestions */}
+                    {field === 'customer' && key === 'salesPerson' && salesPersons.length > 0 ? (
+                      <>
+                        <input
+                          type="text"
+                          className="form-control"
+                          list="salesPersonList"
+                          placeholder="Type or select sales person name"
+                          value={modalData.customer.salesPerson}
+                          onChange={e => {
+                            const val = e.target.value;
+                            const selected = salesPersons.find(sp => sp.name === val);
+                            setModalData({
+                              ...modalData,
+                              customer: {
+                                ...modalData.customer,
+                                salesPerson: val,
+                                salesPersonEmail: selected ? selected.emails : []
+                              }
+                            });
+                            if (!selected) {
+                              setModalData(prev => ({
+                                ...prev,
+                                customer: {
+                                  ...prev.customer,
+                                  salesPerson: val,
+                                  salesPersonEmail: []
+                                }
+                              }));
+                            }
+                          }}
+                          style={{ textTransform: 'uppercase' }}
+                        />
+                        <datalist id="salesPersonList">
+                          {salesPersons.map(sp => (
+                            <option key={sp.name} value={sp.name} />
+                          ))}
+                        </datalist>
+                      </>
+                    ) : (
+                      <input
+                        type={type}
+                        className="form-control"
+                        style={{ borderRadius: '6px', minHeight: '36px', fontSize: '13px' }}
+                        placeholder={`Enter ${label}${key.includes("Email") ? " (comma-separated)" : ""}`}
+                        value={Array.isArray(modalData[field][key]) ? modalData[field][key].join(", ") : modalData[field][key]}
+                        onChange={(e) => handleModalInputChange(field, key, e.target.value)}
+                        required={required}
+                      />
+                    )}
                   </div>
                 ))}
               </div>
