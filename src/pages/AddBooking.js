@@ -51,7 +51,6 @@ function AddBooking({ auth }) {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [customers, setCustomers] = useState([]);
-  // State to store all sales persons from master customer
   const [salesPersons, setSalesPersons] = useState([]);
 
   const fieldDefinitions = {
@@ -101,13 +100,15 @@ function AddBooking({ auth }) {
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
         newMasterData[field + (field === "equipmentType" ? "s" : "s")] = 
-          (docSnap.data().list || []).map(item => {
-            if (field === "fpod") {
-              return `${item.name}, ${item.country}`;
-            } else {
-              return item.name || item.type || item || "";
-            }
-          });
+          (docSnap.data().list || [])
+            .map(item => {
+              if (field === "fpod") {
+                return `${item.name}, ${item.country}`;
+              } else {
+                return item.name || item.type || item || "";
+              }
+            })
+            .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })); // Sort alphabetically
       }
     }
     setMasterData(newMasterData);
@@ -125,7 +126,6 @@ function AddBooking({ auth }) {
     fetchCustomers();
   }, []);
 
-  // Fetch all sales persons from Firestore on mount
   useEffect(() => {
     const fetchSalesPersons = async () => {
       try {
@@ -133,7 +133,6 @@ function AddBooking({ auth }) {
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           const list = docSnap.data().list || [];
-          // Extract unique sales person names and their emails (case-insensitive, trimmed)
           const map = {};
           list.forEach(item => {
             if (item.salesPerson && item.salesPersonEmail && item.salesPersonEmail.length > 0) {
@@ -326,7 +325,6 @@ function AddBooking({ auth }) {
 
   const checkBookingNoExists = async (bookingNo) => {
     if (!bookingNo) return false;
-    // Fetch all entries with the same normalized bookingNo
     const q = query(collection(db, "entries"));
     const querySnapshot = await getDocs(q);
     const normalizedInput = normalizeBookingNo(bookingNo);
@@ -375,7 +373,7 @@ function AddBooking({ auth }) {
         for (const detail of newEntry.equipmentDetails) {
           const numericQty = parseInt(detail.qty, 10);
           if (isNaN(numericQty) || numericQty <= 0) {
-            toast.error(`Quantity for ${detail.equipmentType} must be a positive number greater than 0.`);
+            toast.error(`Quantity for ${detail.equipmentType || "equipment"} must be a positive number greater than 0.`);
             return;
           }
           if (!detail.equipmentType) {
@@ -384,7 +382,6 @@ function AddBooking({ auth }) {
           }
         }
 
-        // Ensure each equipment detail has containerNo (default to empty string if missing)
         const equipmentDetailsWithContainerNo = newEntry.equipmentDetails.map(detail => ({
           equipmentType: detail.equipmentType,
           qty: detail.qty,
@@ -542,7 +539,9 @@ function AddBooking({ auth }) {
     const isEquipmentType = field === "equipmentType";
     const options = [
       { label: `➕ Add New ${field.charAt(0).toUpperCase() + field.slice(1)}`, value: "add_new" },
-      ...optionsList.map(s => ({ label: s, value: s }))
+      ...optionsList
+        .map(s => ({ label: s, value: s }))
+        .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' })) // Sort alphabetically
     ];
 
     const customSelectStyles = {
@@ -676,7 +675,6 @@ function AddBooking({ auth }) {
             </div>
           ))}
           
-          {/* Modal for Equipment Type */}
           <div className="modal fade" id={`${field}Modal`} tabIndex="-1" aria-labelledby={`${field}ModalLabel`} aria-hidden="true">
             <div className="modal-dialog modal-dialog-centered">
               <div className="modal-content" style={{ borderRadius: '12px', border: 'none', boxShadow: '0 5px 20px rgba(0,0,0,0.1)' }}>
@@ -692,7 +690,6 @@ function AddBooking({ auth }) {
                       <label className="form-label" style={{ fontWeight: '600', color: '#495057', fontSize: '13px' }}>
                         {label} {required && <span className="text-danger">*</span>}
                       </label>
-                      {/* For salesPerson, use a single input with datalist for suggestions */}
                       {field === 'customer' && key === 'salesPerson' && salesPersons.length > 0 ? (
                         <>
                           <input
@@ -796,7 +793,6 @@ function AddBooking({ auth }) {
           </button>
         </div>
 
-        {/* Modal */}
         <div className="modal fade" id={`${field}Modal`} tabIndex="-1" aria-labelledby={`${field}ModalLabel`} aria-hidden="true">
           <div className="modal-dialog modal-dialog-centered">
             <div className="modal-content" style={{ borderRadius: '12px', border: 'none', boxShadow: '0 5px 20px rgba(0,0,0,0.1)' }}>
@@ -812,7 +808,6 @@ function AddBooking({ auth }) {
                     <label className="form-label" style={{ fontWeight: '600', color: '#495057', fontSize: '13px' }}>
                       {label} {required && <span className="text-danger">*</span>}
                     </label>
-                    {/* For salesPerson, use a single input with datalist for suggestions */}
                     {field === 'customer' && key === 'salesPerson' && salesPersons.length > 0 ? (
                       <>
                         <input
@@ -959,7 +954,6 @@ function AddBooking({ auth }) {
         }
       `}</style>
       <form className="booking-form-compact">
-        {/* 🏢 Basic Information */}
         <div className="section-title-compact">🏢 Basic Information</div>
         <div className="form-grid-compact mb-2" style={{gridTemplateColumns: 'repeat(4, 1fr)'}}>
           <div>
@@ -985,7 +979,6 @@ function AddBooking({ auth }) {
             <input type="text" className="form-control-compact form-control" value={newEntry.referenceNo} onChange={e => handleChange("referenceNo", e.target.value)} placeholder="Reference" />
           </div>
         </div>
-        {/* 📋 Booking Details */}
         <div className="section-title-compact">📋 Booking Details</div>
         <div className="form-grid-compact mb-2">
           <div>
@@ -1002,7 +995,6 @@ function AddBooking({ auth }) {
           </div>
           <div></div>
         </div>
-        {/* 🚢 Port Information */}
         <div className="section-title-compact">🚢 Port Information</div>
         <div className="form-grid-compact mb-2">
           <div>
@@ -1019,12 +1011,10 @@ function AddBooking({ auth }) {
           </div>
           <div></div>
         </div>
-        {/* 📦 Equipment Details */}
         <div className="section-title-compact">📦 Equipment Details</div>
         <div className="equipment-section-compact mb-2">
           {createSelect("equipmentType", masterData.equipmentTypes)}
         </div>
-        {/* 🚢 Vessel & ⏰ Cut-off Information */}
         <div className="section-title-compact">🚢 Vessel & ⏰ Cut-off Information</div>
         <div className="form-grid-compact mb-2" style={{gridTemplateColumns: 'repeat(5, 1fr)'}}>
           <div>
@@ -1048,7 +1038,6 @@ function AddBooking({ auth }) {
             <input type="date" className="form-control-compact form-control" value={newEntry.etd} onChange={e => handleChange("etd", e.target.value)} />
           </div>
         </div>
-        {/* Submit Button */}
         <div className="row mt-2">
           <div className="col-12">
             <button className="btn btn-primary submit-btn-compact" type="button" onClick={handleAddEntry} disabled={isSubmitting}>
