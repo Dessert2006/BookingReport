@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { db } from "../firebase";
-import { collection, getDocs, doc, updateDoc, deleteDoc, getDoc } from "firebase/firestore";
+import { collection, getDocs, doc, updateDoc, deleteDoc, getDoc, setDoc } from "firebase/firestore";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { toast } from "react-toastify";
 import { Box, Button, Dialog, DialogTitle, DialogContent, DialogActions } from "@mui/material";
@@ -37,6 +37,10 @@ const Dashboard = () => {
   const [blNoDialogOpen, setBlNoDialogOpen] = useState(false);
   const [blNoInput, setBlNoInput] = useState("");
   const [rowForBlNo, setRowForBlNo] = useState(null);
+  const [blReleasedDialogOpen, setBlReleasedDialogOpen] = useState(false);
+  const [rowForBlReleased, setRowForBlReleased] = useState(null);
+  const [saveConfirmDialogOpen, setSaveConfirmDialogOpen] = useState(false);
+  const [pendingSaveRow, setPendingSaveRow] = useState(null);
 
   useEffect(() => {
     const fetchFpodMaster = async () => {
@@ -399,6 +403,11 @@ const Dashboard = () => {
   };
 
   const handleSaveEntry = async (updatedRow = editingEntry) => {
+    if (!saveConfirmDialogOpen) {
+      setPendingSaveRow(updatedRow);
+      setSaveConfirmDialogOpen(true);
+      return;
+    }
     try {
       const docRef = doc(db, "entries", updatedRow.id);
       const updateData = {
@@ -411,9 +420,8 @@ const Dashboard = () => {
         finalDG: Boolean(updatedRow.finalDG),
         blType: updatedRow.blType || "",
         blNo: updatedRow.blNo || "",
-        linerInvoice: Boolean(updatedRow.linerInvoice), // <-- ensure linerInvoice is updated
+        linerInvoice: Boolean(updatedRow.linerInvoice),
       };
-
       if (typeof updatedRow.customer === 'string') {
         const originalEntry = filteredViewData.find(entry => entry.id === updatedRow.id);
         if (originalEntry && typeof originalEntry.customer === 'object') {
@@ -427,9 +435,7 @@ const Dashboard = () => {
       } else {
         updateData.customer = updatedRow.customer;
       }
-
       await updateDoc(docRef, updateData);
-
       const updatedData = filteredViewData.map(entry =>
         entry.id === updatedRow.id ? {
           ...entry,
@@ -438,7 +444,6 @@ const Dashboard = () => {
         } : entry
       );
       setFilteredViewData(updatedData);
-
       const updatedOriginalData = originalFilteredData.map(entry =>
         entry.id === updatedRow.id ? {
           ...entry,
@@ -447,14 +452,27 @@ const Dashboard = () => {
         } : entry
       );
       setOriginalFilteredData(updatedOriginalData);
-
       setEditingEntry(null);
       toast.success('Entry updated successfully! 🎉');
       fetchDashboardData();
     } catch (error) {
       console.error('Error updating entry:', error);
       toast.error(`Failed to update entry: ${error.message}`);
+    } finally {
+      setSaveConfirmDialogOpen(false);
+      setPendingSaveRow(null);
     }
+  };
+
+  const handleSaveConfirm = () => {
+    if (pendingSaveRow) {
+      handleSaveEntry(pendingSaveRow);
+    }
+  };
+
+  const handleSaveCancel = () => {
+    setSaveConfirmDialogOpen(false);
+    setPendingSaveRow(null);
   };
 
   const handleDeleteEntry = async (entryId) => {
@@ -522,21 +540,57 @@ const Dashboard = () => {
         toast.error("All previous steps must be completed before releasing B/L.");
         return;
       }
-      const updatedRow = { ...row, [field]: value };
-      try {
-        await handleSaveEntry(updatedRow);
-        toast.success("B/L Released successfully!");
-      } catch (error) {
-        toast.error("Failed to release B/L.");
-      }
-    } else {
-      const updatedRow = { ...row, [field]: value };
-      try {
-        await handleSaveEntry(updatedRow);
-      } catch (error) {
-        toast.error(`Failed to update ${field}.`);
-      }
+      setRowForBlReleased(row);
+      setBlReleasedDialogOpen(true);
+      return;
+    } 
+    const updatedRow = { ...row, [field]: value };
+    try {
+      await handleSaveEntry(updatedRow);
+    } catch (error) {
+      toast.error(`Failed to update ${field}.`);
     }
+  };
+
+  const handleBlReleasedConfirm = async () => {
+    if (!rowForBlReleased) return;
+    const updatedRow = { ...rowForBlReleased, blReleased: true };
+    try {
+      // Move to completedFiles
+      const entryDocRef = doc(db, "entries", updatedRow.id);
+      const entrySnap = await getDoc(entryDocRef);
+      if (entrySnap.exists()) {
+        const entryData = entrySnap.data();
+        await setDoc(doc(db, "completedFiles", updatedRow.id), {
+          ...entryData,
+          blReleased: true,
+          completedAt: new Date().toISOString(),
+        });
+        await deleteDoc(entryDocRef);
+        toast.success("B/L Released and entry moved to Completed Files!");
+        setBlReleasedDialogOpen(false);
+        setRowForBlReleased(null);
+        fetchDashboardData();
+        // Remove from filtered view if present
+        setFilteredViewData((prev) => prev.filter(e => e.id !== updatedRow.id));
+        setOriginalFilteredData((prev) => prev.filter(e => e.id !== updatedRow.id));
+      } else {
+        toast.error("Entry not found.");
+      }
+    } catch (error) {
+      toast.error("Failed to move entry to Completed Files.");
+    }
+  };
+
+  const handleBlReleasedCancel = () => {
+    setBlReleasedDialogOpen(false);
+    setRowForBlReleased(null);
+  };
+
+  const handleBlTypeDialogClose = () => {
+    setSelectedBlType("");
+    setRowForBlType(null);
+    setBlTypeDialogOpen(false);
   };
 
   const handleBlTypeDialogSubmit = async () => {
@@ -560,10 +614,10 @@ const Dashboard = () => {
     setBlTypeDialogOpen(false);
   };
 
-  const handleBlTypeDialogClose = () => {
-    setSelectedBlType("");
-    setRowForBlType(null);
-    setBlTypeDialogOpen(false);
+  const handleBlNoDialogClose = () => {
+    setBlNoInput("");
+    setRowForBlNo(null);
+    setBlNoDialogOpen(false);
   };
 
   const handleBlNoDialogSubmit = async () => {
@@ -582,12 +636,6 @@ const Dashboard = () => {
     } catch (error) {
       toast.error("Failed to update First Print and BL No.");
     }
-    setBlNoInput("");
-    setRowForBlNo(null);
-    setBlNoDialogOpen(false);
-  };
-
-  const handleBlNoDialogClose = () => {
     setBlNoInput("");
     setRowForBlNo(null);
     setBlNoDialogOpen(false);
@@ -1262,6 +1310,30 @@ const Dashboard = () => {
         <DialogActions>
           <Button onClick={handleBlNoDialogClose}>Cancel</Button>
           <Button onClick={handleBlNoDialogSubmit} disabled={!blNoInput.trim()}>Submit</Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={blReleasedDialogOpen} onClose={handleBlReleasedCancel}>
+        <DialogTitle>Confirm B/L Release</DialogTitle>
+        <DialogContent>
+          Are you sure you want to mark this entry as B/L Released? This will move the entry to Completed Files.
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleBlReleasedCancel}>Cancel</Button>
+          <Button onClick={handleBlReleasedConfirm} color="primary" autoFocus>
+            Confirm
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={saveConfirmDialogOpen} onClose={handleSaveCancel}>
+        <DialogTitle>Confirm Save</DialogTitle>
+        <DialogContent>
+          Are you sure you want to save the changes to this entry?
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleSaveCancel}>Cancel</Button>
+          <Button onClick={handleSaveConfirm} color="primary" autoFocus>
+            Confirm
+          </Button>
         </DialogActions>
       </Dialog>
     </div>
