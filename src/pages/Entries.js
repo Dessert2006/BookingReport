@@ -278,7 +278,7 @@ function Entries(props) {
           const textFields = [
             "location", "customer", "line", "pol", "pod", "fpod", "vessel",
             "bookingNo", "containerNo", "volume", "voyage", "blNo", "equipmentType",
-            "portCutOff", "siCutOff", "salesPersonName"
+            "portCutOff", "siCutOff", "salesPersonName", "referenceNo" // <-- added referenceNo
           ];
           const textMatch = textFields.some(field => {
             const value = typeof entry[field] === 'object' ? entry[field]?.name : entry[field];
@@ -576,12 +576,16 @@ function Entries(props) {
       const portCutOffChanged = oldRow.portCutOff !== formattedPortCutOff;
       const siCutOffChanged = oldRow.siCutOff !== formattedSiCutOff;
       const etdChanged = oldRow.etd !== newRow.etd;
+      // Trim vessel, voyage, pol for matching
+      const vesselTrimmed = (formattedRow.vessel || "").trim();
+      const voyageTrimmed = (formattedRow.voyage || "").trim();
+      const polTrimmed = (formattedRow.pol || "").trim();
       if (portCutOffChanged || siCutOffChanged || etdChanged) {
         const q = query(
           collection(db, "entries"),
-          where("vessel", "==", formattedRow.vessel || ""),
-          where("voyage", "==", formattedRow.voyage || ""),
-          where("pol", "==", formattedRow.pol || "")
+          where("vessel", "==", vesselTrimmed),
+          where("voyage", "==", voyageTrimmed),
+          where("pol", "==", polTrimmed)
         );
         const querySnapshot = await getDocs(q);
 
@@ -590,11 +594,21 @@ function Entries(props) {
 
         querySnapshot.forEach((docSnap) => {
           const entryId = docSnap.id;
-          if (entryId !== formattedRow.id) {
+          // Also trim for comparison
+          const docData = docSnap.data();
+          const docVessel = (docData.vessel || "").trim();
+          const docVoyage = (docData.voyage || "").trim();
+          const docPol = (docData.pol || "").trim();
+          if (
+            entryId !== formattedRow.id &&
+            docVessel === vesselTrimmed &&
+            docVoyage === voyageTrimmed &&
+            docPol === polTrimmed
+          ) {
             const updateData = {
-              portCutOff: portCutOffChanged ? formattedPortCutOff : docSnap.data().portCutOff,
-              siCutOff: siCutOffChanged ? formattedSiCutOff : docSnap.data().siCutOff,
-              etd: etdChanged ? formattedRow.etd : docSnap.data().etd,
+              portCutOff: portCutOffChanged ? formattedPortCutOff : docData.portCutOff,
+              siCutOff: siCutOffChanged ? formattedSiCutOff : docData.siCutOff,
+              etd: etdChanged ? formattedRow.etd : docData.etd,
             };
             const docRef = doc(db, "entries", entryId);
             batchUpdates.push(updateDoc(docRef, updateData));
@@ -1135,14 +1149,16 @@ function Entries(props) {
     }
     setSobDialogOpen(false);
     const formattedSobDate = formatDate(sobDateInput);
+    // Set ETD to SOB date (in YYYY-MM-DD format)
+    const etdDate = sobDateInput; // keep as YYYY-MM-DD for storage
     let isUpdate = rowForSob && rowForSob.sob && rowForSob.sobDate;
-    const newRow = { ...rowForSob, sob: true, sobDate: formattedSobDate };
+    const newRow = { ...rowForSob, sob: true, sobDate: formattedSobDate, etd: etdDate };
     try {
       await handleProcessRowUpdate(newRow, rowForSob);
       if (isUpdate) {
-        toast.success("SOB date updated");
+        toast.success("SOB date updated and ETD synced");
       } else {
-        toast.success("SOB checked, date added");
+        toast.success("SOB checked, date added and ETD synced");
       }
       if (newRow.customerEmail && newRow.salesPersonEmail) {
         try {
