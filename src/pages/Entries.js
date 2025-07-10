@@ -1195,8 +1195,11 @@ function Entries(props) {
             errorMessage = "Email service not available (connection refused)";
           } else if (emailError.code === 'ETIMEDOUT') {
             errorMessage = "Email service timeout";
+          } else if (emailError.response && emailError.response.data && emailError.response.data.error) {
+            // Show backend error message directly if available
+            errorMessage = emailError.response.data.error;
           } else if (emailError.response) {
-            errorMessage = `Email API error: ${emailError.response.status} - ${emailError.response.data?.message || emailError.response.statusText}`;
+            errorMessage = `Email API error: ${emailError.response.status} - ${emailError.response.statusText}`;
           } else if (emailError.request) {
             errorMessage = "No response from email service";
           } else {
@@ -1810,6 +1813,42 @@ function Entries(props) {
           <div style={{ color: mailStatus.success ? '#388e3c' : '#d32f2f', fontWeight: 500, fontSize: 16 }}>
             {mailStatus.message}
           </div>
+          {!mailStatus.success && mailStatus.message && (
+            <div style={{ marginTop: 16, fontSize: 14 }}>
+              <strong>How to fix:</strong>
+              <ul style={{ marginTop: 8 }}>
+                {mailStatus.message.includes("Salesperson email missing") && (
+                  <li>
+                    <b>Salesperson email is missing.</b> Please check the customer master data and ensure the salesperson email is filled for this customer.
+                  </li>
+                )}
+                {mailStatus.message.includes("Customer or salesperson email missing") && (
+                  <li>
+                    <b>Customer or salesperson email is missing.</b> Please update the entry with valid email addresses.
+                  </li>
+                )}
+                {mailStatus.message.includes("connection refused") && (
+                  <li>
+                    <b>Email service is not running.</b> Please ensure the backend email service is running and accessible.
+                  </li>
+                )}
+                {mailStatus.message.includes("timeout") && (
+                  <li>
+                    <b>Network timeout.</b> Please check your internet connection or try again later.
+                  </li>
+                )}
+                {mailStatus.message.includes("Invalid address") && (
+                  <li>
+                    <b>Invalid email address.</b> Please verify the email addresses for customer and salesperson.
+                  </li>
+                )}
+                {/* Add more error-specific suggestions as needed */}
+                <li>
+                  If the issue persists, contact your IT support with the above error message.
+                </li>
+              </ul>
+            </div>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setMailStatusDialogOpen(false)} color="primary" autoFocus>
