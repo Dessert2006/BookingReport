@@ -137,6 +137,8 @@ function Entries(props) {
   const [page, setPage] = useState(0);
   const [selectedEntry, setSelectedEntry] = useState(null);
   const [auditDialogOpen, setAuditDialogOpen] = useState(false);
+  const [addVesselDialogOpen, setAddVesselDialogOpen] = useState(false);
+  const [newVesselName, setNewVesselName] = useState("");
 
   const gridContainerRef = useRef(null);
   let touchStartX = null;
@@ -494,19 +496,32 @@ function Entries(props) {
       let updatedEquipmentDetails = Array.isArray(newRow.equipmentDetails)
         ? [...newRow.equipmentDetails]
         : [];
-      if (updatedEquipmentDetails.length > 0) {
-        // If user edited containerNo as a string, split and assign to equipmentDetails
-        let containerNumbers = [];
-        if (typeof newRow.containerNo === 'string') {
-          containerNumbers = newRow.containerNo.split(',').map(c => c.trim()).filter(Boolean);
-        } else if (Array.isArray(newRow.containerNo)) {
-          containerNumbers = newRow.containerNo.filter(Boolean);
+      if (typeof newRow.containerNo === 'string' && newRow.containerNo.includes(',')) {
+        // User entered comma-separated container numbers
+        const containerNumbers = newRow.containerNo.split(',').map(c => c.trim()).filter(Boolean);
+        if (updatedEquipmentDetails.length === 0) {
+          // If no equipmentDetails, create new items
+          updatedEquipmentDetails = containerNumbers.map(cn => ({ containerNo: cn }));
+        } else {
+          // Map container numbers to equipmentDetails
+          updatedEquipmentDetails = updatedEquipmentDetails.map((eq, idx) => ({
+            ...eq,
+            containerNo: containerNumbers[idx] || eq.containerNo || ''
+          }));
+          // If more container numbers than equipmentDetails, add new ones
+          if (containerNumbers.length > updatedEquipmentDetails.length) {
+            for (let i = updatedEquipmentDetails.length; i < containerNumbers.length; i++) {
+              updatedEquipmentDetails.push({ containerNo: containerNumbers[i] });
+            }
+          }
         }
-        // Update each equipmentDetails item with containerNo
-        updatedEquipmentDetails = updatedEquipmentDetails.map((eq, idx) => ({
-          ...eq,
-          containerNo: containerNumbers[idx] || eq.containerNo || ''
-        }));
+      } else if (typeof newRow.containerNo === 'string' && newRow.containerNo.trim() !== '') {
+        // Single container number as string
+        if (updatedEquipmentDetails.length === 0) {
+          updatedEquipmentDetails = [{ containerNo: newRow.containerNo.trim() }];
+        } else {
+          updatedEquipmentDetails[0].containerNo = newRow.containerNo.trim();
+        }
       }
 
       let allActions = [...(oldRow.actions || [])];
@@ -1228,7 +1243,41 @@ function Entries(props) {
   };
 
   const handleCheckboxEdit = async (row, field, value) => {
+    // Prerequisite fields for B/L Released
+    const fieldsToCheck = [...prerequisiteFields];
+    const entryFpod = row.fpod || "";
+    const fpodString = entryFpod.toUpperCase();
+    const matchingFpod = fpodMaster.find(
+      (fpod) => fpod.toUpperCase() === fpodString
+    );
+    const isUS = /\b(USA|UNITED STATES|UNITED STATES OF AMERICA)\b/i.test(entryFpod) ||
+      (matchingFpod && /\b(USA|UNITED STATES|UNITED STATES OF AMERICA)\b/i.test(matchingFpod));
+    if (isUS && !fieldsToCheck.includes("isfSent")) {
+      fieldsToCheck.push("isfSent");
+    }
+    // If any of the prerequisite checkboxes (including blReleased) is ticked
+    if (fieldsToCheck.includes(field) || field === "blReleased") {
+      // Simulate the new state after this checkbox is ticked
+      const newRow = { ...row, [field]: value };
+      const allPrerequisitesMet = fieldsToCheck.every(
+        (prereqField) => newRow[prereqField] === true
+      );
+      // Only show popup if all prerequisites are now true and blReleased is not yet true
+      if (allPrerequisitesMet && !newRow.blReleased && value) {
+        setRowToComplete({ ...row, [field]: true, blReleased: true });
+        setConfirmDialogOpen(true);
+        return;
+      }
+    }
     if (field === "siFiled" && value) {
+      // Check if containerNo is blank
+      let containerNo = Array.isArray(row.containerNo)
+        ? row.containerNo.join(',').trim()
+        : (row.containerNo || '').trim();
+      if (!containerNo) {
+        toast.error("Please fill the Container No before marking SI Filed.");
+        return;
+      }
       setRowForBlType(row);
       setBlTypeDialogOpen(true);
       return;
@@ -1251,30 +1300,9 @@ function Entries(props) {
       const newRow = { ...row, [field]: value };
       await handleProcessRowUpdate(newRow, row);
     } else if (field === "blReleased" && value) {
-      const fieldsToCheck = [...prerequisiteFields];
-      const entryFpod = row.fpod || "";
-      // Check for USA or United States (case-insensitive)
-      const fpodString = entryFpod.toUpperCase();
-      const matchingFpod = fpodMaster.find(
-        (fpod) => fpod.toUpperCase() === fpodString
-      );
-      const isUS = /\b(USA|UNITED STATES|UNITED STATES OF AMERICA)\b/i.test(entryFpod) ||
-        (matchingFpod && /\b(USA|UNITED STATES|UNITED STATES OF AMERICA)\b/i.test(matchingFpod));
-      if (isUS) {
-        fieldsToCheck.push("isfSent");
-      }
-
-      const allPrerequisitesMet = fieldsToCheck.every(
-        (prereqField) => row[prereqField] === true
-      );
-
-      if (!allPrerequisitesMet) {
-        toast.error("All previous steps must be completed before releasing B/L.");
-        return;
-      }
-
-      setRowToComplete({ ...row, blReleased: true });
-      setConfirmDialogOpen(true);
+      // Now, just tick the box, don't show popup here
+      const newRow = { ...row, blReleased: true };
+      await handleProcessRowUpdate(newRow, row);
     } else {
       const currentActions = row.actions || [];
       const newAction = getAuditAction(entryFields[field] || field, props.auth?.username || "Unknown", value ? "Yes" : "No");
@@ -1422,6 +1450,34 @@ function Entries(props) {
     }
   };
 
+  // Add Vessel to master data
+  const handleAddVessel = async () => {
+    const vesselName = newVesselName.trim();
+    if (!vesselName) {
+      toast.error("Vessel name cannot be empty");
+      return;
+    }
+    try {
+      const vesselDocRef = doc(db, "newMaster", "vessel");
+      const vesselDoc = await getDoc(vesselDocRef);
+      let vesselList = vesselDoc.exists() ? vesselDoc.data().list || [] : [];
+      // Prevent duplicates (case-insensitive)
+      if (vesselList.some(v => (v.name || v).toLowerCase() === vesselName.toLowerCase())) {
+        toast.error("Vessel already exists in master data");
+        return;
+      }
+      vesselList.push({ name: vesselName });
+      await updateDoc(vesselDocRef, { list: vesselList });
+      setMasterData(prev => ({ ...prev, vessel: [...prev.vessel, vesselName].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })) }));
+      setFpodMaster(prev => [...prev]); // force rerender if needed
+      toast.success("Vessel added to master data!");
+      setAddVesselDialogOpen(false);
+      setNewVesselName("");
+    } catch (err) {
+      toast.error("Failed to add vessel");
+    }
+  };
+
   return (
     <div className="container mt-4">
       <style>{styles}</style>
@@ -1438,6 +1494,20 @@ function Entries(props) {
           </button>
         ))}
       </Box>
+      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 2 }}>
+  <span style={{ fontSize: 15, color: '#1976d2', fontWeight: 500, marginBottom: 4 }}>
+    Add vessel from here if not present in vessel drop down list
+  </span>
+  <Button
+    variant="outlined"
+    color="primary"
+    size="small"
+    sx={{ mt: 1 }}
+    onClick={() => setAddVesselDialogOpen(true)}
+  >
+    Add Vessel +
+  </Button>
+</Box>
 
       <Box sx={{ mb: 3, display: 'flex', justifyContent: 'center', gap: 2, flexWrap: 'wrap' }}>
         <button
@@ -1835,7 +1905,7 @@ function Entries(props) {
                 {mailStatus.message.includes("timeout") && (
                   <li>
                     <b>Network timeout.</b> Please check your internet connection or try again later.
-                  </li>
+                                   </li>
                 )}
                 {mailStatus.message.includes("Invalid address") && (
                   <li>
@@ -1853,6 +1923,7 @@ function Entries(props) {
         <DialogActions>
           <Button onClick={() => setMailStatusDialogOpen(false)} color="primary" autoFocus>
             OK
+         
           </Button>
         </DialogActions>
       </Dialog>
@@ -1897,6 +1968,25 @@ function Entries(props) {
             </div>
           )}
         </DialogContent>
+      </Dialog>
+
+      <Dialog open={addVesselDialogOpen} onClose={() => setAddVesselDialogOpen(false)}>
+        <DialogTitle>Add New Vessel</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Vessel Name"
+            type="text"
+            fullWidth
+            value={newVesselName}
+            onChange={e => setNewVesselName(e.target.value)}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAddVesselDialogOpen(false)}>Cancel</Button>
+          <Button onClick={handleAddVessel} disabled={!newVesselName.trim()}>Add</Button>
+        </DialogActions>
       </Dialog>
     </div>
   );
