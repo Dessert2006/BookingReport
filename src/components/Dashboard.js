@@ -503,7 +503,35 @@ const Dashboard = () => {
   };
 
   const handleCheckboxEdit = async (row, field, value) => {
+    // Prerequisite fields for B/L Released
+    const fieldsToCheck = ["vgmFiled", "siFiled", "firstPrinted", "correctionsFinalised"];
+    const entryFpod = row.fpod || "";
+    const matchingFpod = fpodMaster.find(
+      (fpod) => fpod.toUpperCase() === entryFpod.toUpperCase()
+    );
+    if (
+      (matchingFpod && matchingFpod.toUpperCase().includes("USA")) ||
+      entryFpod.toUpperCase().includes("USA")
+    ) {
+      if (!fieldsToCheck.includes("isfSent")) fieldsToCheck.push("isfSent");
+    }
+    if (fieldsToCheck.includes(field) || field === "blReleased") {
+      // Simulate the new state after this checkbox is ticked
+      const newRow = { ...row, [field]: value };
+      const allPrerequisitesMet = fieldsToCheck.every((prereqField) => newRow[prereqField] === true);
+      // Only show popup if all prerequisites are now true and blReleased is not yet true
+      if (allPrerequisitesMet && !newRow.blReleased && value) {
+        setRowForBlReleased({ ...row, [field]: true, blReleased: true });
+        setBlReleasedDialogOpen(true);
+        return;
+      }
+    }
     if (field === "siFiled" && value) {
+      // Prevent SI Filed if Container No is blank
+      if (!row.containerNo || (Array.isArray(row.containerNo) && row.containerNo.length === 0) || (typeof row.containerNo === 'string' && row.containerNo.trim() === '')) {
+        toast.error("Please enter Container No before ticking SI Filed.");
+        return;
+      }
       setRowForBlType(row);
       setSelectedBlType("");
       setBlTypeDialogOpen(true);
@@ -524,26 +552,15 @@ const Dashboard = () => {
       return;
     }
     if (field === "blReleased" && value) {
-      const fieldsToCheck = ["vgmFiled", "siFiled", "firstPrinted", "correctionsFinalised"];
-      const entryFpod = row.fpod || "";
-      const matchingFpod = fpodMaster.find(
-        (fpod) => fpod.toUpperCase() === entryFpod.toUpperCase()
-      );
-      if (
-        (matchingFpod && matchingFpod.toUpperCase().includes("USA")) ||
-        entryFpod.toUpperCase().includes("USA")
-      ) {
-        fieldsToCheck.push("isfSent");
+      // Now, just tick the box, don't show popup here
+      const updatedRow = { ...row, blReleased: true };
+      try {
+        await handleSaveEntry(updatedRow);
+      } catch (error) {
+        toast.error(`Failed to update ${field}.`);
       }
-      const allPrerequisitesMet = fieldsToCheck.every((prereqField) => row[prereqField] === true);
-      if (!allPrerequisitesMet) {
-        toast.error("All previous steps must be completed before releasing B/L.");
-        return;
-      }
-      setRowForBlReleased(row);
-      setBlReleasedDialogOpen(true);
       return;
-    } 
+    }
     const updatedRow = { ...row, [field]: value };
     try {
       await handleSaveEntry(updatedRow);

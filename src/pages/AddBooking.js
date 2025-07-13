@@ -692,11 +692,8 @@ function AddBooking({ auth }) {
                       </label>
                       {field === 'customer' && key === 'salesPerson' && salesPersons.length > 0 ? (
                         <>
-                          <input
-                            type="text"
+                          <select
                             className="form-control"
-                            list="salesPersonList"
-                            placeholder="Type or select sales person name"
                             value={modalData.customer.salesPerson}
                             onChange={e => {
                               const val = e.target.value;
@@ -709,24 +706,64 @@ function AddBooking({ auth }) {
                                   salesPersonEmail: selected ? selected.emails : []
                                 }
                               });
-                              if (!selected) {
-                                setModalData(prev => ({
-                                  ...prev,
-                                  customer: {
-                                    ...prev.customer,
-                                    salesPerson: val,
-                                    salesPersonEmail: []
-                                  }
-                                }));
-                              }
                             }}
+                            required={required}
                             style={{ textTransform: 'uppercase' }}
-                          />
-                          <datalist id="salesPersonList">
+                          >
+                            <option value="">Select sales person</option>
                             {salesPersons.map(sp => (
-                              <option key={sp.name} value={sp.name} />
+                              <option key={sp.name} value={sp.name}>{sp.name}</option>
                             ))}
-                          </datalist>
+                          </select>
+                        </>
+                      ) : field === 'customer' && key === 'salesPersonEmail' && modalData.customer.salesPerson && salesPersons.length > 0 ? (
+                        <>
+                          {(() => {
+                            const selected = salesPersons.find(sp => sp.name === modalData.customer.salesPerson);
+                            if (selected && selected.emails && selected.emails.length > 1) {
+                              return (
+                                <select
+                                  className="form-control"
+                                  value={modalData.customer.salesPersonEmail[0] || ''}
+                                  onChange={e => {
+                                    setModalData({
+                                      ...modalData,
+                                      customer: {
+                                        ...modalData.customer,
+                                        salesPersonEmail: [e.target.value]
+                                      }
+                                    });
+                                  }}
+                                  required={required}
+                                >
+                                  <option value="">Select email</option>
+                                  {selected.emails.map(email => (
+                                    <option key={email} value={email}>{email}</option>
+                                  ))}
+                                </select>
+                              );
+                            } else if (selected && selected.emails && selected.emails.length === 1) {
+                              return (
+                                <input
+                                  type="text"
+                                  className="form-control"
+                                  value={selected.emails[0]}
+                                  disabled
+                                  readOnly
+                                />
+                              );
+                            } else {
+                              return (
+                                <input
+                                  type="text"
+                                  className="form-control"
+                                  value=""
+                                  disabled
+                                  readOnly
+                                />
+                              );
+                            }
+                          })()}
                         </>
                       ) : (
                         <input
@@ -810,11 +847,8 @@ function AddBooking({ auth }) {
                     </label>
                     {field === 'customer' && key === 'salesPerson' && salesPersons.length > 0 ? (
                       <>
-                        <input
-                          type="text"
+                        <select
                           className="form-control"
-                          list="salesPersonList"
-                          placeholder="Type or select sales person name"
                           value={modalData.customer.salesPerson}
                           onChange={e => {
                             const val = e.target.value;
@@ -827,24 +861,64 @@ function AddBooking({ auth }) {
                                 salesPersonEmail: selected ? selected.emails : []
                               }
                             });
-                            if (!selected) {
-                              setModalData(prev => ({
-                                ...prev,
-                                customer: {
-                                  ...prev.customer,
-                                  salesPerson: val,
-                                  salesPersonEmail: []
-                                }
-                              }));
-                            }
                           }}
+                          required={required}
                           style={{ textTransform: 'uppercase' }}
-                        />
-                        <datalist id="salesPersonList">
+                        >
+                          <option value="">Select sales person</option>
                           {salesPersons.map(sp => (
-                            <option key={sp.name} value={sp.name} />
+                            <option key={sp.name} value={sp.name}>{sp.name}</option>
                           ))}
-                        </datalist>
+                        </select>
+                      </>
+                    ) : field === 'customer' && key === 'salesPersonEmail' && modalData.customer.salesPerson && salesPersons.length > 0 ? (
+                      <>
+                        {(() => {
+                          const selected = salesPersons.find(sp => sp.name === modalData.customer.salesPerson);
+                          if (selected && selected.emails && selected.emails.length > 1) {
+                            return (
+                              <select
+                                className="form-control"
+                                value={modalData.customer.salesPersonEmail[0] || ''}
+                                onChange={e => {
+                                  setModalData({
+                                    ...modalData,
+                                    customer: {
+                                      ...modalData.customer,
+                                      salesPersonEmail: [e.target.value]
+                                    }
+                                  });
+                                }}
+                                required={required}
+                              >
+                                <option value="">Select email</option>
+                                {selected.emails.map(email => (
+                                  <option key={email} value={email}>{email}</option>
+                                ))}
+                              </select>
+                            );
+                          } else if (selected && selected.emails && selected.emails.length === 1) {
+                            return (
+                              <input
+                                type="text"
+                                className="form-control"
+                                value={selected.emails[0]}
+                                disabled
+                                readOnly
+                              />
+                            );
+                          } else {
+                            return (
+                              <input
+                                type="text"
+                                className="form-control"
+                                value=""
+                                disabled
+                                readOnly
+                              />
+                            );
+                          }
+                        })()}
                       </>
                     ) : (
                       <input
