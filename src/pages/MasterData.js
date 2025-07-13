@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { doc, getDoc, setDoc, updateDoc, arrayUnion } from "firebase/firestore";
 import { db } from "../firebase";
+import { collection, getDocs } from "firebase/firestore";
 
 function MasterData() {
   // Add temporary state for email input strings
@@ -22,6 +23,9 @@ function MasterData() {
   const [isLoading, setIsLoading] = useState(false);
   const [showModal, setShowModal] = useState({ open: false, field: "" });
   const [progress, setProgress] = useState(0);
+
+  // State to store all sales persons from customers
+  const [salesPersons, setSalesPersons] = useState([]);
 
   const fieldDefinitions = {
     customer: [
@@ -81,6 +85,33 @@ function MasterData() {
     ).length;
     setProgress((filledFields / totalFields) * 100);
   }, [newMaster]);
+
+  // Fetch all sales persons from Firestore on mount
+  useEffect(() => {
+    const fetchSalesPersons = async () => {
+      try {
+        const docRef = doc(db, "newMaster", "customer");
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const list = docSnap.data().list || [];
+          // Extract unique sales person names and their emails (case-insensitive, trimmed)
+          const map = {};
+          list.forEach(item => {
+            if (item.salesPerson && item.salesPersonEmail && item.salesPersonEmail.length > 0) {
+              const normName = item.salesPerson.trim().toUpperCase();
+              if (!map[normName]) {
+                map[normName] = { name: item.salesPerson.trim(), emails: item.salesPersonEmail };
+              }
+            }
+          });
+          setSalesPersons(Object.values(map));
+        }
+      } catch (err) {
+        console.error("Failed to fetch sales persons", err);
+      }
+    };
+    fetchSalesPersons();
+  }, []);
 
   const showToast = (message, type = 'info') => {
     console.log(`Toast: ${message} (${type})`);
@@ -631,26 +662,91 @@ function MasterData() {
                         {label} 
                         {required && <span className="text-danger ms-1">*</span>}
                       </label>
-                      <input
-                        type={type}
-                        className="form-control"
-                        placeholder={`Enter ${label.toLowerCase()}${key.includes("Email") ? " (comma-separated)" : ""}`}
-                        value={
-                          showModal.field === 'customer' && (key === 'customerEmail' || key === 'salesPersonEmail')
-                            ? emailInputs[key]
-                            : Array.isArray(newMaster[showModal.field][key])
-                              ? newMaster[showModal.field][key].join(", ")
-                              : newMaster[showModal.field][key]
-                        }
-                        onChange={(e) => handleInputChange(showModal.field, key, e.target.value)}
-                        onBlur={
-                          showModal.field === 'customer' && (key === 'customerEmail' || key === 'salesPersonEmail')
-                            ? () => handleEmailBlur(showModal.field, key)
-                            : undefined
-                        }
-                        required={required}
-                        style={key.includes('Email') ? { textTransform: 'none' } : { textTransform: 'uppercase' }}
-                      />
+                      {/* For salesPerson, use a single input with datalist for suggestions */}
+                      {showModal.field === 'customer' && key === 'salesPerson' && salesPersons.length > 0 ? (
+                        <>
+                          <select
+                            className="form-control"
+                            value={newMaster.customer.salesPerson}
+                            onChange={e => {
+                              const val = e.target.value;
+                              const selected = salesPersons.find(sp => sp.name === val);
+                              setNewMaster({
+                                ...newMaster,
+                                customer: {
+                                  ...newMaster.customer,
+                                  salesPerson: val,
+                                  salesPersonEmail: selected ? selected.emails : []
+                                }
+                              });
+                              setEmailInputs(inputs => ({ ...inputs, salesPersonEmail: selected ? selected.emails.join(', ') : '' }));
+                              if (!selected) {
+                                setNewMaster(prev => ({
+                                  ...prev,
+                                  customer: {
+                                    ...prev.customer,
+                                    salesPerson: val,
+                                    salesPersonEmail: []
+                                  }
+                                }));
+                                setEmailInputs(inputs => ({ ...inputs, salesPersonEmail: '' }));
+                              }
+                            }}
+                            style={{ textTransform: 'uppercase' }}
+                          >
+                            <option value="">Select Sales Person</option>
+                            {salesPersons.map(sp => (
+                              <option key={sp.name} value={sp.name}>{sp.name}</option>
+                            ))}
+                          </select>
+                        </>
+                      ) : showModal.field === 'customer' && key === 'salesPersonEmail' && salesPersons.length > 0 ? (
+                        <select
+                          className="form-control"
+                          value={newMaster.customer.salesPersonEmail[0] || ''}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setNewMaster({
+                              ...newMaster,
+                              customer: {
+                                ...newMaster.customer,
+                                salesPersonEmail: val ? [val] : []
+                              }
+                            });
+                            setEmailInputs(inputs => ({ ...inputs, salesPersonEmail: val }));
+                          }}
+                          style={{ textTransform: 'none' }}
+                        >
+                          <option value="">Select Sales Person Email</option>
+                          {salesPersons
+                            .flatMap(sp => sp.emails)
+                            .filter((email, idx, arr) => arr.indexOf(email) === idx)
+                            .map(email => (
+                              <option key={email} value={email}>{email}</option>
+                            ))}
+                        </select>
+                      ) : (
+                        <input
+                          type={type}
+                          className="form-control"
+                          placeholder={`Enter ${label.toLowerCase()}${key.includes("Email") ? " (comma-separated)" : ""}`}
+                          value={
+                            showModal.field === 'customer' && (key === 'customerEmail' || key === 'salesPersonEmail')
+                              ? emailInputs[key]
+                              : Array.isArray(newMaster[showModal.field][key])
+                                ? newMaster[showModal.field][key].join(", ")
+                                : newMaster[showModal.field][key]
+                          }
+                          onChange={(e) => handleInputChange(showModal.field, key, e.target.value)}
+                          onBlur={
+                            showModal.field === 'customer' && (key === 'customerEmail' || key === 'salesPersonEmail')
+                              ? () => handleEmailBlur(showModal.field, key)
+                              : undefined
+                          }
+                          required={required}
+                          style={key.includes('Email') ? { textTransform: 'none' } : { textTransform: 'uppercase' }}
+                        />
+                      )}
                     </div>
                   ))}
                 </div>
