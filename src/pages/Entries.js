@@ -496,32 +496,19 @@ function Entries(props) {
       let updatedEquipmentDetails = Array.isArray(newRow.equipmentDetails)
         ? [...newRow.equipmentDetails]
         : [];
-      if (typeof newRow.containerNo === 'string' && newRow.containerNo.includes(',')) {
-        // User entered comma-separated container numbers
-        const containerNumbers = newRow.containerNo.split(',').map(c => c.trim()).filter(Boolean);
-        if (updatedEquipmentDetails.length === 0) {
-          // If no equipmentDetails, create new items
-          updatedEquipmentDetails = containerNumbers.map(cn => ({ containerNo: cn }));
-        } else {
-          // Map container numbers to equipmentDetails
-          updatedEquipmentDetails = updatedEquipmentDetails.map((eq, idx) => ({
-            ...eq,
-            containerNo: containerNumbers[idx] || eq.containerNo || ''
-          }));
-          // If more container numbers than equipmentDetails, add new ones
-          if (containerNumbers.length > updatedEquipmentDetails.length) {
-            for (let i = updatedEquipmentDetails.length; i < containerNumbers.length; i++) {
-              updatedEquipmentDetails.push({ containerNo: containerNumbers[i] });
-            }
-          }
+      if (updatedEquipmentDetails.length > 0) {
+        // If user edited containerNo as a string, split and assign to equipmentDetails
+        let containerNumbers = [];
+        if (typeof newRow.containerNo === 'string') {
+          containerNumbers = newRow.containerNo.split(',').map(c => c.trim()).filter(Boolean);
+        } else if (Array.isArray(newRow.containerNo)) {
+          containerNumbers = newRow.containerNo.filter(Boolean);
         }
-      } else if (typeof newRow.containerNo === 'string' && newRow.containerNo.trim() !== '') {
-        // Single container number as string
-        if (updatedEquipmentDetails.length === 0) {
-          updatedEquipmentDetails = [{ containerNo: newRow.containerNo.trim() }];
-        } else {
-          updatedEquipmentDetails[0].containerNo = newRow.containerNo.trim();
-        }
+        // Update each equipmentDetails item with containerNo
+        updatedEquipmentDetails = updatedEquipmentDetails.map((eq, idx) => ({
+          ...eq,
+          containerNo: containerNumbers[idx] || eq.containerNo || ''
+        }));
       }
 
       let allActions = [...(oldRow.actions || [])];
@@ -1210,11 +1197,8 @@ function Entries(props) {
             errorMessage = "Email service not available (connection refused)";
           } else if (emailError.code === 'ETIMEDOUT') {
             errorMessage = "Email service timeout";
-          } else if (emailError.response && emailError.response.data && emailError.response.data.error) {
-            // Show backend error message directly if available
-            errorMessage = emailError.response.data.error;
           } else if (emailError.response) {
-            errorMessage = `Email API error: ${emailError.response.status} - ${emailError.response.statusText}`;
+            errorMessage = `Email API error: ${emailError.response.status} - ${emailError.response.data?.message || emailError.response.statusText}`;
           } else if (emailError.request) {
             errorMessage = "No response from email service";
           } else {
@@ -1243,7 +1227,18 @@ function Entries(props) {
   };
 
   const handleCheckboxEdit = async (row, field, value) => {
-    // Prerequisite fields for B/L Released
+    if (field === "siFiled" && value) {
+      setRowForBlType(row);
+      setBlTypeDialogOpen(true);
+      return;
+    }
+    if (field === "firstPrinted" && value) {
+      setCurrentRow(row);
+      setOpenDialog(true);
+      return;
+    }
+
+    // Custom logic for B/L Released and Liner Invoice gating
     const fieldsToCheck = [...prerequisiteFields];
     const entryFpod = row.fpod || "";
     const fpodString = entryFpod.toUpperCase();
@@ -1252,64 +1247,84 @@ function Entries(props) {
     );
     const isUS = /\b(USA|UNITED STATES|UNITED STATES OF AMERICA)\b/i.test(entryFpod) ||
       (matchingFpod && /\b(USA|UNITED STATES|UNITED STATES OF AMERICA)\b/i.test(matchingFpod));
-    if (isUS && !fieldsToCheck.includes("isfSent")) {
-      fieldsToCheck.push("isfSent");
+    if (isUS) {
+      if (!fieldsToCheck.includes("isfSent")) fieldsToCheck.push("isfSent");
     }
-    // If any of the prerequisite checkboxes (including blReleased) is ticked
-    if (fieldsToCheck.includes(field) || field === "blReleased") {
-      // Simulate the new state after this checkbox is ticked
-      const newRow = { ...row, [field]: value };
-      const allPrerequisitesMet = fieldsToCheck.every(
-        (prereqField) => newRow[prereqField] === true
-      );
-      // Only show popup if all prerequisites are now true and blReleased is not yet true
-      if (allPrerequisitesMet && !newRow.blReleased && value) {
-        setRowToComplete({ ...row, [field]: true, blReleased: true });
+
+    // If user is trying to check B/L Released
+    if (field === "blReleased" && value) {
+      // Check if all prerequisites except blReleased are ticked
+      const allExceptBl = fieldsToCheck.every(f => f === "blReleased" || row[f] === true);
+      const linerChecked = row.linerInvoice === true;
+      const linerUnticked = !row.linerInvoice;
+
+      // Allow B/L Released to be checked if all prerequisites except linerInvoice and blReleased are ticked
+      const allExceptBlAndLiner = fieldsToCheck
+        .filter(f => f !== "blReleased" && f !== "linerInvoice")
+        .every(f => row[f] === true);
+
+      if (allExceptBlAndLiner) {
+        // If linerInvoice is already checked, move to completed files
+        if (row.linerInvoice) {
+          setRowToComplete({ ...row, blReleased: true });
+          setConfirmDialogOpen(true);
+          return;
+        } else {
+          // Allow B/L Released to be checked, prompt for linerInvoice
+          const currentActions = row.actions || [];
+          const newAction = getAuditAction("B/L Released", props.auth?.username || "Unknown", "Yes");
+          const updatedActions = [...currentActions, newAction];
+          const newRow = { ...row, blReleased: true, actions: updatedActions };
+          await handleProcessRowUpdate(newRow, row);
+          toast.info("Please tick Liner Invoice to complete the process.");
+          setTimeout(() => {
+            toast.info("Liner Invoice must be ticked to move to Completed Files.");
+          }, 500);
+          return;
+        }
+      }
+      // Otherwise, block
+      toast.error("All previous steps must be completed before releasing B/L.");
+      return;
+    }
+
+    // If user is trying to check Liner Invoice and all other prerequisites (including blReleased) are ticked, move to completed files
+    if (field === "linerInvoice" && value) {
+      // Check if all prerequisites except linerInvoice are ticked, and blReleased is true
+      const allExceptLiner = fieldsToCheck.filter(f => f !== "linerInvoice").every(f => row[f] === true || (f === field && value));
+      if (allExceptLiner && row.blReleased) {
+        // Move to completed files
+        setRowToComplete({ ...row, linerInvoice: true });
         setConfirmDialogOpen(true);
         return;
       }
-    }
-    if (field === "siFiled" && value) {
-      // Check if containerNo is blank
-      let containerNo = Array.isArray(row.containerNo)
-        ? row.containerNo.join(',').trim()
-        : (row.containerNo || '').trim();
-      if (!containerNo) {
-        toast.error("Please fill the Container No before marking SI Filed.");
-        return;
-      }
-      setRowForBlType(row);
-      setBlTypeDialogOpen(true);
-      return;
-    }
-    if (field === "firstPrinted" && value) {
-      setCurrentRow(row);
-      setOpenDialog(true);
-    } else if (field === "correctionsFinalised" && value) {
-      if (!row.firstPrinted) {
-        toast.error("Please tick First Print before Corrections Finalised.");
-        return;
-      }
-      const newRow = { ...row, [field]: value };
-      await handleProcessRowUpdate(newRow, row);
-    } else if (field === "linerInvoice" && value) {
+      // Otherwise, normal gating
       if (!row.firstPrinted) {
         toast.error("Please tick First Print before Liner Invoice.");
         return;
       }
       const newRow = { ...row, [field]: value };
       await handleProcessRowUpdate(newRow, row);
-    } else if (field === "blReleased" && value) {
-      // Now, just tick the box, don't show popup here
-      const newRow = { ...row, blReleased: true };
-      await handleProcessRowUpdate(newRow, row);
-    } else {
-      const currentActions = row.actions || [];
-      const newAction = getAuditAction(entryFields[field] || field, props.auth?.username || "Unknown", value ? "Yes" : "No");
-      const updatedActions = [...currentActions, newAction];
-      const newRow = { ...row, [field]: value, actions: updatedActions };
-      await handleProcessRowUpdate(newRow, row);
+      return;
     }
+
+    // Normal gating for Corrections Finalised
+    if (field === "correctionsFinalised" && value) {
+      if (!row.firstPrinted) {
+        toast.error("Please tick First Print before Corrections Finalised.");
+        return;
+      }
+      const newRow = { ...row, [field]: value };
+      await handleProcessRowUpdate(newRow, row);
+      return;
+    }
+
+    // Default: just update the field
+    const currentActions = row.actions || [];
+    const newAction = getAuditAction(entryFields[field] || field, props.auth?.username || "Unknown", value ? "Yes" : "No");
+    const updatedActions = [...currentActions, newAction];
+    const newRow = { ...row, [field]: value, actions: updatedActions };
+    await handleProcessRowUpdate(newRow, row);
   };
 
   const handleDialogSubmit = async () => {
@@ -1394,12 +1409,15 @@ function Entries(props) {
   };
 
   const handleCancelComplete = () => {
-    if (rowToComplete) {
+    // Only reset B/L Released if the user was confirming B/L Released directly
+    if (rowToComplete && rowToComplete.blReleased && !rowToComplete.linerInvoice) {
+      // User was confirming B/L Released, so revert blReleased
       const updatedEntries = entries.map((entry) =>
         entry.id === rowToComplete.id ? { ...entry, blReleased: false } : entry
       );
       setEntries(updatedEntries);
     }
+    // If user was confirming Liner Invoice after B/L Released, do not revert blReleased
     setConfirmDialogOpen(false);
     setRowToComplete(null);
   };
@@ -1450,31 +1468,25 @@ function Entries(props) {
     }
   };
 
-  // Add Vessel to master data
   const handleAddVessel = async () => {
-    const vesselName = newVesselName.trim();
-    if (!vesselName) {
-      toast.error("Vessel name cannot be empty");
+    if (!newVesselName.trim()) {
+      toast.error("Vessel name cannot be empty.");
       return;
     }
+
     try {
-      const vesselDocRef = doc(db, "newMaster", "vessel");
-      const vesselDoc = await getDoc(vesselDocRef);
-      let vesselList = vesselDoc.exists() ? vesselDoc.data().list || [] : [];
-      // Prevent duplicates (case-insensitive)
-      if (vesselList.some(v => (v.name || v).toLowerCase() === vesselName.toLowerCase())) {
-        toast.error("Vessel already exists in master data");
-        return;
-      }
-      vesselList.push({ name: vesselName });
-      await updateDoc(vesselDocRef, { list: vesselList });
-      setMasterData(prev => ({ ...prev, vessel: [...prev.vessel, vesselName].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })) }));
-      setFpodMaster(prev => [...prev]); // force rerender if needed
-      toast.success("Vessel added to master data!");
+      const updatedVessels = [...masterData.vessel, newVesselName.trim()];
+      setMasterData((prev) => ({ ...prev, vessel: updatedVessels }));
+
+      const docRef = doc(db, "newMaster", "vessel");
+      await updateDoc(docRef, { list: updatedVessels });
+
+      toast.success("Vessel added successfully.");
       setAddVesselDialogOpen(false);
       setNewVesselName("");
-    } catch (err) {
-      toast.error("Failed to add vessel");
+    } catch (error) {
+      console.error("Error adding vessel:", error);
+      toast.error("Failed to add vessel.");
     }
   };
 
@@ -1494,20 +1506,45 @@ function Entries(props) {
           </button>
         ))}
       </Box>
-      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 2 }}>
-  <span style={{ fontSize: 15, color: '#1976d2', fontWeight: 500, marginBottom: 4 }}>
-    Add vessel from here if not present in vessel drop down list
-  </span>
-  <Button
-    variant="outlined"
-    color="primary"
-    size="small"
-    sx={{ mt: 1 }}
-    onClick={() => setAddVesselDialogOpen(true)}
-  >
-    Add Vessel +
-  </Button>
-</Box>
+
+
+
+      <Box sx={{ mb: 1, display: 'flex', justifyContent: 'center' }}>
+        <span style={{ fontWeight: 500, fontSize: 16, color: '#1976d2', textAlign: 'center' }}>
+          Add vessel from here if not present in vessel drop down list
+        </span>
+      </Box>
+      <Box sx={{ mb: 3, display: 'flex', justifyContent: 'center' }}>
+        <Button
+          variant="contained"
+          color="secondary"
+          onClick={() => setAddVesselDialogOpen(true)}
+        >
+          Add Vessel
+        </Button>
+      </Box>
+
+      <Dialog open={addVesselDialogOpen} onClose={() => setAddVesselDialogOpen(false)}>
+        <DialogTitle>Add Vessel</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Vessel Name"
+            type="text"
+            fullWidth
+            value={newVesselName}
+            onChange={(e) => setNewVesselName(e.target.value)}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAddVesselDialogOpen(false)}>Cancel</Button>
+          <Button onClick={handleAddVessel} color="primary">
+            Add
+          </Button>
+        </DialogActions>
+      </Dialog>
+
 
       <Box sx={{ mb: 3, display: 'flex', justifyContent: 'center', gap: 2, flexWrap: 'wrap' }}>
         <button
@@ -1883,47 +1920,10 @@ function Entries(props) {
           <div style={{ color: mailStatus.success ? '#388e3c' : '#d32f2f', fontWeight: 500, fontSize: 16 }}>
             {mailStatus.message}
           </div>
-          {!mailStatus.success && mailStatus.message && (
-            <div style={{ marginTop: 16, fontSize: 14 }}>
-              <strong>How to fix:</strong>
-              <ul style={{ marginTop: 8 }}>
-                {mailStatus.message.includes("Salesperson email missing") && (
-                  <li>
-                    <b>Salesperson email is missing.</b> Please check the customer master data and ensure the salesperson email is filled for this customer.
-                  </li>
-                )}
-                {mailStatus.message.includes("Customer or salesperson email missing") && (
-                  <li>
-                    <b>Customer or salesperson email is missing.</b> Please update the entry with valid email addresses.
-                  </li>
-                )}
-                {mailStatus.message.includes("connection refused") && (
-                  <li>
-                    <b>Email service is not running.</b> Please ensure the backend email service is running and accessible.
-                  </li>
-                )}
-                {mailStatus.message.includes("timeout") && (
-                  <li>
-                    <b>Network timeout.</b> Please check your internet connection or try again later.
-                                   </li>
-                )}
-                {mailStatus.message.includes("Invalid address") && (
-                  <li>
-                    <b>Invalid email address.</b> Please verify the email addresses for customer and salesperson.
-                  </li>
-                )}
-                {/* Add more error-specific suggestions as needed */}
-                <li>
-                  If the issue persists, contact your IT support with the above error message.
-                </li>
-              </ul>
-            </div>
-          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setMailStatusDialogOpen(false)} color="primary" autoFocus>
             OK
-         
           </Button>
         </DialogActions>
       </Dialog>
@@ -1970,24 +1970,6 @@ function Entries(props) {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={addVesselDialogOpen} onClose={() => setAddVesselDialogOpen(false)}>
-        <DialogTitle>Add New Vessel</DialogTitle>
-        <DialogContent>
-          <TextField
-            autoFocus
-            margin="dense"
-            label="Vessel Name"
-            type="text"
-            fullWidth
-            value={newVesselName}
-            onChange={e => setNewVesselName(e.target.value)}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setAddVesselDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleAddVessel} disabled={!newVesselName.trim()}>Add</Button>
-        </DialogActions>
-      </Dialog>
     </div>
   );
 }
