@@ -496,15 +496,21 @@ function Entries(props) {
       let updatedEquipmentDetails = Array.isArray(newRow.equipmentDetails)
         ? [...newRow.equipmentDetails]
         : [];
-      if (updatedEquipmentDetails.length > 0) {
-        // If user edited containerNo as a string, split and assign to equipmentDetails
-        let containerNumbers = [];
-        if (typeof newRow.containerNo === 'string') {
-          containerNumbers = newRow.containerNo.split(',').map(c => c.trim()).filter(Boolean);
-        } else if (Array.isArray(newRow.containerNo)) {
-          containerNumbers = newRow.containerNo.filter(Boolean);
+      let containerNumbers = [];
+      if (typeof newRow.containerNo === 'string') {
+        containerNumbers = newRow.containerNo.split(',').map(c => c.trim()).filter(Boolean);
+      } else if (Array.isArray(newRow.containerNo)) {
+        containerNumbers = newRow.containerNo.map(c => (typeof c === 'string' ? c.trim() : c)).filter(Boolean);
+      }
+      if (containerNumbers.length > 0) {
+        // If equipmentDetails is empty or has fewer items, expand it
+        if (updatedEquipmentDetails.length < containerNumbers.length) {
+          // Fill with empty objects if needed
+          for (let i = updatedEquipmentDetails.length; i < containerNumbers.length; i++) {
+            updatedEquipmentDetails.push({});
+          }
         }
-        // Update each equipmentDetails item with containerNo
+        // Map container numbers to equipmentDetails
         updatedEquipmentDetails = updatedEquipmentDetails.map((eq, idx) => ({
           ...eq,
           containerNo: containerNumbers[idx] || eq.containerNo || ''
