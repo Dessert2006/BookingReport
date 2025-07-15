@@ -515,6 +515,9 @@ function Entries(props) {
           ...eq,
           containerNo: containerNumbers[idx] || eq.containerNo || ''
         }));
+      } else {
+        // If containerNo is cleared, clear equipmentDetails too
+        updatedEquipmentDetails = [];
       }
 
       let allActions = [...(oldRow.actions || [])];
@@ -1234,6 +1237,14 @@ function Entries(props) {
 
   const handleCheckboxEdit = async (row, field, value) => {
     if (field === "siFiled" && value) {
+      // Prevent SI Filed if containerNo is empty
+      let containerNo = Array.isArray(row.containerNo)
+        ? row.containerNo.join(',').trim()
+        : (row.containerNo || '').trim();
+      if (!containerNo) {
+        toast.error("Please fill the Container No before marking SI Filed.");
+        return;
+      }
       setRowForBlType(row);
       setBlTypeDialogOpen(true);
       return;
