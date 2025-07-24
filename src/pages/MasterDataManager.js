@@ -61,6 +61,13 @@ function MasterDataManager() {
     }
   }, [selectedMaster]);
 
+  // Debug: Log vessel data if selected
+  useEffect(() => {
+    if (selectedMaster === 'vessel') {
+      console.log('Current vessel masterList:', masterList);
+    }
+  }, [selectedMaster, masterList]);
+
   useEffect(() => {
     const fetchCustomers = async () => {
       const customerSnapshot = await getDocs(collection(db, "customers"));
@@ -797,11 +804,21 @@ function MasterDataManager() {
                                   onChange={(e) => handleChange(field.key, e.target.value)}
                                 />
                               ) : (
-                                <span>
-                                  {field.key.includes("Email") 
-                                    ? (item[field.key] || []).join(", ") 
-                                    : item[field.key] || ""}
-                                </span>
+                                // Vessel fallback: show string in Name column, blank in Flag if entry is a string
+                                selectedMaster === 'vessel' && typeof item === 'string' ? (
+                                  field.key === 'name' ? <span>{item}</span> : <span></span>
+                                ) : (
+                                  // Vessel fallback: show JSON if missing field (for legacy/other cases)
+                                  selectedMaster === 'vessel' && !item[field.key] ? (
+                                    <span style={{ color: 'red', fontSize: '0.8em' }}>{JSON.stringify(item)}</span>
+                                  ) : (
+                                    <span>
+                                      {field.key.includes("Email")
+                                        ? (item[field.key] || []).join(", ")
+                                        : item[field.key] || ""}
+                                    </span>
+                                  )
+                                )
                               )}
                             </td>
                           ))}

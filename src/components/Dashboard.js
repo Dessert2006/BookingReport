@@ -411,7 +411,7 @@ const Dashboard = () => {
         finalDG: Boolean(updatedRow.finalDG),
         blType: updatedRow.blType || "",
         blNo: updatedRow.blNo || "",
-        linerInvoice: Boolean(updatedRow.linerInvoice), // <-- ensure linerInvoice is updated
+        linerInvoice: Boolean(updatedRow.linerInvoice),
       };
 
       if (typeof updatedRow.customer === 'string') {
@@ -428,7 +428,23 @@ const Dashboard = () => {
         updateData.customer = updatedRow.customer;
       }
 
-      await updateDoc(docRef, updateData);
+      // If BL Released is true, move to completedFiles and delete from entries
+      if (updateData.blReleased) {
+        const entrySnap = await getDoc(docRef);
+        if (entrySnap.exists()) {
+          const entryData = entrySnap.data();
+          const completedData = { ...entryData, ...updateData };
+          try {
+            await updateDoc(doc(db, "completedFiles", updatedRow.id), completedData);
+          } catch {
+            const { setDoc } = await import("firebase/firestore");
+            await setDoc(doc(db, "completedFiles", updatedRow.id), completedData);
+          }
+          await deleteDoc(docRef);
+        }
+      } else {
+        await updateDoc(docRef, updateData);
+      }
 
       const updatedData = filteredViewData.map(entry =>
         entry.id === updatedRow.id ? {
@@ -484,7 +500,8 @@ const Dashboard = () => {
     }
   };
 
-  const handleCheckboxEdit = async (row, field, value) => {
+  // Refactored: Only update local editingEntry state, not DB
+  const handleCheckboxEdit = (row, field, value) => {
     if (field === "siFiled" && value) {
       setRowForBlType(row);
       setSelectedBlType("");
@@ -522,21 +539,9 @@ const Dashboard = () => {
         toast.error("All previous steps must be completed before releasing B/L.");
         return;
       }
-      const updatedRow = { ...row, [field]: value };
-      try {
-        await handleSaveEntry(updatedRow);
-        toast.success("B/L Released successfully!");
-      } catch (error) {
-        toast.error("Failed to release B/L.");
-      }
-    } else {
-      const updatedRow = { ...row, [field]: value };
-      try {
-        await handleSaveEntry(updatedRow);
-      } catch (error) {
-        toast.error(`Failed to update ${field}.`);
-      }
     }
+    // Only update editingEntry state
+    setEditingEntry(prev => ({ ...prev, [field]: value }));
   };
 
   const handleBlTypeDialogSubmit = async () => {

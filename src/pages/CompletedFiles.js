@@ -2,10 +2,66 @@ import React, { useState, useEffect } from "react";
 import { db } from "../firebase";
 import { collection, getDocs, doc, updateDoc } from "firebase/firestore";
 import { DataGrid } from "@mui/x-data-grid";
-import { TextField, FormControlLabel, Checkbox } from "@mui/material";
+import { TextField, FormControlLabel, Checkbox, Button, Dialog, DialogTitle, DialogContent, DialogActions, Box } from "@mui/material";
 import { toast } from "react-toastify";
+import * as XLSX from "xlsx";
+import AuditTrail from "../components/AuditTrail";
 
-function CompletedFiles() {
+function CompletedFiles(props) {
+  const [selectedRows, setSelectedRows] = useState([]);
+  const [auditDialogOpen, setAuditDialogOpen] = useState(false);
+  const [selectedEntry, setSelectedEntry] = useState(null);
+  // Export to Excel feature
+  const exportToExcel = () => {
+    const rowsToExport = selectedRows.length > 0
+      ? filteredEntries.filter(entry => selectedRows.includes(entry.id))
+      : filteredEntries;
+
+    const exportData = rowsToExport.map(entry => {
+      // Only export visible/important fields
+      return {
+        Location: entry.location,
+        "Booking No": entry.bookingNo,
+        Customer: entry.customer,
+        Reference: entry.referenceNo,
+        Sales: entry.salesPersonName,
+        "Booking Date": formatDate(entry.bookingDate),
+        "Booking Validity": formatDate(entry.bookingValidity),
+        Line: entry.line,
+        POL: entry.pol,
+        POD: entry.pod,
+        FPOD: entry.fpod,
+        Volume: entry.volume,
+        "Container No": entry.containerNo,
+        Vessel: entry.vessel,
+        Voyage: entry.voyage,
+        "Port CutOff": entry.portCutOff,
+        "SI CutOff": entry.siCutOff,
+        ETD: formatDate(entry.etd),
+        "VGM Filed": entry.vgmFiled ? "Yes" : "No",
+        "SI Filed": entry.siFiled ? "Yes" : "No",
+        "FINAL DG": entry.finalDG ? "Yes" : "No",
+        "First Printed": entry.firstPrinted ? "Yes" : "No",
+        "Corrections Finalised": entry.correctionsFinalised ? "Yes" : "No",
+        "B/L - Released": entry.blReleased ? "Yes" : "No",
+        "ISF SENT": entry.isfSent ? "Yes" : "No",
+        SOB: entry.sob ? "Yes" : "No",
+        "SOB Date": formatDate(entry.sobDate),
+        "BL No": entry.blNo,
+        "Invoice No": entry.invoiceNo,
+        Remarks: entry.remarks,
+        "ETA Destination": formatDate(entry.etaDestination),
+        "Courier Details": entry.courierDetails,
+        ...(entry.movedBy ? { "Moved By": entry.movedBy } : {}),
+        ...(entry.movedAt ? { "Moved At": entry.movedAt } : {}),
+      };
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Completed Files");
+    XLSX.writeFile(workbook, "completed_files.xlsx");
+  };
   const [completedEntries, setCompletedEntries] = useState([]);
   const [filteredEntries, setFilteredEntries] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -147,7 +203,30 @@ function CompletedFiles() {
     "finalDG"
   ];
 
+  // See Audit column (admin only)
+  const isAdmin = props?.auth?.isAdmin || props?.auth?.role === "admin";
+
   const columns = [
+    ...(isAdmin ? [{
+      field: "seeAudit",
+      headerName: "See Audit",
+      width: 120,
+      sortable: false,
+      filterable: false,
+      renderCell: (params) => (
+        <Button
+          variant="outlined"
+          size="small"
+          color="primary"
+          onClick={() => {
+            setSelectedEntry(params.row);
+            setAuditDialogOpen(true);
+          }}
+        >
+          See Audit
+        </Button>
+      )
+    }] : []),
     {
       field: "location",
       headerName: "Location",
@@ -168,7 +247,7 @@ function CompletedFiles() {
     },
     {
       field: "referenceNo",
-      headerName: "Reference NO",
+      headerName: "Reference",
       width: 150,
       editable: true,
       renderCell: (params) => params.value || ""
@@ -530,7 +609,7 @@ function CompletedFiles() {
     <div className="container mt-4">
       <h2 className="mb-4 text-center">Completed Files</h2>
 
-      <div className="mb-3">
+      <div className="mb-3 d-flex align-items-center">
         <TextField
           label="Search..."
           variant="outlined"
@@ -538,6 +617,14 @@ function CompletedFiles() {
           value={searchQuery}
           onChange={handleSearch}
         />
+        <Button
+          variant="contained"
+          color="primary"
+          onClick={exportToExcel}
+          style={{ marginLeft: '10px', minWidth: 160 }}
+        >
+          Export to Excel
+        </Button>
       </div>
 
       <div className="mb-3">
@@ -569,6 +656,8 @@ function CompletedFiles() {
           disableSelectionOnClick
           processRowUpdate={handleProcessRowUpdate}
           onProcessRowUpdateError={(error) => console.error(error)}
+          selectionModel={selectedRows}
+          onSelectionModelChange={setSelectedRows}
           sx={{
             height: '100%',
             width: '100%',
@@ -626,6 +715,30 @@ function CompletedFiles() {
           }}
         />
       </div>
+
+      {/* Audit Dialog (admin only) */}
+      <Dialog
+        open={auditDialogOpen}
+        onClose={() => setAuditDialogOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>Audit Trail</DialogTitle>
+        <DialogContent>
+          {selectedEntry ? (
+            <AuditTrail entry={selectedEntry} show={true} />
+          ) : (
+            <div style={{ padding: 24, color: '#d32f2f', fontWeight: 500 }}>
+              No entry data found for this row.
+            </div>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAuditDialogOpen(false)} color="primary">
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
     </div>
   );
 }

@@ -265,6 +265,7 @@ function Entries(props) {
   const applyFilters = () => {
     let filtered = [...entries];
 
+
     // Apply nomination filter when NOMINATION is active
     if (activeLocationFilter === "NOMINATION") {
       filtered = filtered.filter((entry) => entry.isNominated === true);
@@ -280,7 +281,7 @@ function Entries(props) {
           const textFields = [
             "location", "customer", "line", "pol", "pod", "fpod", "vessel",
             "bookingNo", "containerNo", "volume", "voyage", "blNo", "equipmentType",
-            "portCutOff", "siCutOff", "salesPersonName", "referenceNo" // <-- added referenceNo
+            "portCutOff", "siCutOff", "salesPersonName", "referenceNo", "remarks" // <-- added remarks
           ];
           const textMatch = textFields.some(field => {
             const value = typeof entry[field] === 'object' ? entry[field]?.name : entry[field];
