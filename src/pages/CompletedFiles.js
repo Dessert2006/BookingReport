@@ -206,27 +206,7 @@ function CompletedFiles(props) {
   // See Audit column (admin only)
   const isAdmin = props?.auth?.isAdmin || props?.auth?.role === "admin";
 
-  const columns = [
-    ...(isAdmin ? [{
-      field: "seeAudit",
-      headerName: "See Audit",
-      width: 120,
-      sortable: false,
-      filterable: false,
-      renderCell: (params) => (
-        <Button
-          variant="outlined"
-          size="small"
-          color="primary"
-          onClick={() => {
-            setSelectedEntry(params.row);
-            setAuditDialogOpen(true);
-          }}
-        >
-          See Audit
-        </Button>
-      )
-    }] : []),
+  let columns = [
     {
       field: "location",
       headerName: "Location",
@@ -566,6 +546,33 @@ function CompletedFiles(props) {
       renderCell: (params) => params.value || ""
     }
   ];
+
+  // Add See Audit button as the first column ONLY for admin users (like Entries.js)
+  if (isAdmin) {
+    columns = [
+      {
+        field: "seeAudit",
+        headerName: "See Audit",
+        width: 120,
+        sortable: false,
+        filterable: false,
+        renderCell: (params) => (
+          <Button
+            variant="outlined"
+            size="small"
+            color="primary"
+            onClick={() => {
+              setSelectedEntry(params.row);
+              setAuditDialogOpen(true);
+            }}
+          >
+            See Audit
+          </Button>
+        )
+      },
+      ...columns
+    ];
+  }
 
   const handleProcessRowUpdate = async (newRow, oldRow) => {
     try {
