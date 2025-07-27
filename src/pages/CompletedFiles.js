@@ -2,71 +2,18 @@ import React, { useState, useEffect } from "react";
 import { db } from "../firebase";
 import { collection, getDocs, doc, updateDoc } from "firebase/firestore";
 import { DataGrid } from "@mui/x-data-grid";
-import { TextField, FormControlLabel, Checkbox, Button, Dialog, DialogTitle, DialogContent, DialogActions, Box } from "@mui/material";
+import { TextField, FormControlLabel, Checkbox, Button, Dialog, DialogTitle, DialogContent, DialogActions } from "@mui/material";
 import { toast } from "react-toastify";
-import * as XLSX from "xlsx";
 import AuditTrail from "../components/AuditTrail";
 
 function CompletedFiles(props) {
-  const [selectedRows, setSelectedRows] = useState([]);
-  const [auditDialogOpen, setAuditDialogOpen] = useState(false);
-  const [selectedEntry, setSelectedEntry] = useState(null);
-  // Export to Excel feature
-  const exportToExcel = () => {
-    const rowsToExport = selectedRows.length > 0
-      ? filteredEntries.filter(entry => selectedRows.includes(entry.id))
-      : filteredEntries;
-
-    const exportData = rowsToExport.map(entry => {
-      // Only export visible/important fields
-      return {
-        Location: entry.location,
-        "Booking No": entry.bookingNo,
-        Customer: entry.customer,
-        Reference: entry.referenceNo,
-        Sales: entry.salesPersonName,
-        "Booking Date": formatDate(entry.bookingDate),
-        "Booking Validity": formatDate(entry.bookingValidity),
-        Line: entry.line,
-        POL: entry.pol,
-        POD: entry.pod,
-        FPOD: entry.fpod,
-        Volume: entry.volume,
-        "Container No": entry.containerNo,
-        Vessel: entry.vessel,
-        Voyage: entry.voyage,
-        "Port CutOff": entry.portCutOff,
-        "SI CutOff": entry.siCutOff,
-        ETD: formatDate(entry.etd),
-        "VGM Filed": entry.vgmFiled ? "Yes" : "No",
-        "SI Filed": entry.siFiled ? "Yes" : "No",
-        "FINAL DG": entry.finalDG ? "Yes" : "No",
-        "First Printed": entry.firstPrinted ? "Yes" : "No",
-        "Corrections Finalised": entry.correctionsFinalised ? "Yes" : "No",
-        "B/L - Released": entry.blReleased ? "Yes" : "No",
-        "ISF SENT": entry.isfSent ? "Yes" : "No",
-        SOB: entry.sob ? "Yes" : "No",
-        "SOB Date": formatDate(entry.sobDate),
-        "BL No": entry.blNo,
-        "Invoice No": entry.invoiceNo,
-        Remarks: entry.remarks,
-        "ETA Destination": formatDate(entry.etaDestination),
-        "Courier Details": entry.courierDetails,
-        ...(entry.movedBy ? { "Moved By": entry.movedBy } : {}),
-        ...(entry.movedAt ? { "Moved At": entry.movedAt } : {}),
-      };
-    });
-
-    const worksheet = XLSX.utils.json_to_sheet(exportData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Completed Files");
-    XLSX.writeFile(workbook, "completed_files.xlsx");
-  };
   const [completedEntries, setCompletedEntries] = useState([]);
   const [filteredEntries, setFilteredEntries] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [locations, setLocations] = useState([]);
   const [selectedLocations, setSelectedLocations] = useState([]);
+  const [auditDialogOpen, setAuditDialogOpen] = useState(false);
+  const [selectedEntry, setSelectedEntry] = useState(null);
 
   // Function to format dates from YYYY-MM-DD to DD-MM-YYYY
   const formatDate = (dateStr) => {
@@ -203,10 +150,7 @@ function CompletedFiles(props) {
     "finalDG"
   ];
 
-  // See Audit column (admin only)
-  const isAdmin = props?.auth?.isAdmin || props?.auth?.role === "admin";
-
-  let columns = [
+  const columns = [
     {
       field: "location",
       headerName: "Location",
@@ -227,7 +171,7 @@ function CompletedFiles(props) {
     },
     {
       field: "referenceNo",
-      headerName: "Reference",
+      headerName: "Reference NO",
       width: 150,
       editable: true,
       renderCell: (params) => params.value || ""
@@ -547,31 +491,27 @@ function CompletedFiles(props) {
     }
   ];
 
-  // Add See Audit button as the first column ONLY for admin users (like Entries.js)
-  if (isAdmin) {
-    columns = [
-      {
-        field: "seeAudit",
-        headerName: "See Audit",
-        width: 120,
-        sortable: false,
-        filterable: false,
-        renderCell: (params) => (
-          <Button
-            variant="outlined"
-            size="small"
-            color="primary"
-            onClick={() => {
-              setSelectedEntry(params.row);
-              setAuditDialogOpen(true);
-            }}
-          >
-            See Audit
-          </Button>
-        )
-      },
-      ...columns
-    ];
+  // Add See Audit button as the first column ONLY for admin users
+  if (props.auth?.isAdmin || props.auth?.role === "admin") {
+    columns.unshift({
+      field: "seeAudit",
+      headerName: "See Audit",
+      sortable: false,
+      filterable: false,
+      width: 110,
+      renderCell: (params) => (
+        <Button
+          variant="outlined"
+          size="small"
+          onClick={() => {
+            setSelectedEntry(params.row);
+            setAuditDialogOpen(true);
+          }}
+        >
+          See Audit
+        </Button>
+      ),
+    });
   }
 
   const handleProcessRowUpdate = async (newRow, oldRow) => {
@@ -616,7 +556,7 @@ function CompletedFiles(props) {
     <div className="container mt-4">
       <h2 className="mb-4 text-center">Completed Files</h2>
 
-      <div className="mb-3 d-flex align-items-center">
+      <div className="mb-3">
         <TextField
           label="Search..."
           variant="outlined"
@@ -624,14 +564,6 @@ function CompletedFiles(props) {
           value={searchQuery}
           onChange={handleSearch}
         />
-        <Button
-          variant="contained"
-          color="primary"
-          onClick={exportToExcel}
-          style={{ marginLeft: '10px', minWidth: 160 }}
-        >
-          Export to Excel
-        </Button>
       </div>
 
       <div className="mb-3">
@@ -663,8 +595,6 @@ function CompletedFiles(props) {
           disableSelectionOnClick
           processRowUpdate={handleProcessRowUpdate}
           onProcessRowUpdateError={(error) => console.error(error)}
-          selectionModel={selectedRows}
-          onSelectionModelChange={setSelectedRows}
           sx={{
             height: '100%',
             width: '100%',
@@ -723,7 +653,7 @@ function CompletedFiles(props) {
         />
       </div>
 
-      {/* Audit Dialog (admin only) */}
+      {/* Add Audit Trail Dialog */}
       <Dialog
         open={auditDialogOpen}
         onClose={() => setAuditDialogOpen(false)}
