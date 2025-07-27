@@ -4,7 +4,7 @@ import { collection, getDocs, doc, updateDoc } from "firebase/firestore";
 import { DataGrid } from "@mui/x-data-grid";
 import { TextField, FormControlLabel, Checkbox, Button, Dialog, DialogTitle, DialogContent, DialogActions } from "@mui/material";
 import { toast } from "react-toastify";
-import AuditTrail from "../components/AuditTrail";
+import AuditTrail from "../components/AuditTrail"; // Import the AuditTrail component
 
 function CompletedFiles(props) {
   const [completedEntries, setCompletedEntries] = useState([]);
@@ -491,9 +491,8 @@ function CompletedFiles(props) {
     }
   ];
 
-  // Add See Audit button as the first column ONLY for admin users
-  if (props.auth?.isAdmin || props.auth?.role === "admin") {
-    columns.unshift({
+  const allColumns = [
+    {
       field: "seeAudit",
       headerName: "See Audit",
       sortable: false,
@@ -511,7 +510,12 @@ function CompletedFiles(props) {
           See Audit
         </Button>
       ),
-    });
+    },
+    ...columns,
+  ];
+
+  if (props.auth?.isAdmin || props.auth?.role === "admin") {
+    columns.unshift(allColumns[0]);
   }
 
   const handleProcessRowUpdate = async (newRow, oldRow) => {
@@ -653,21 +657,16 @@ function CompletedFiles(props) {
         />
       </div>
 
-      {/* Add Audit Trail Dialog */}
       <Dialog
         open={auditDialogOpen}
         onClose={() => setAuditDialogOpen(false)}
-        maxWidth="md"
         fullWidth
+        maxWidth="md"
       >
         <DialogTitle>Audit Trail</DialogTitle>
         <DialogContent>
-          {selectedEntry ? (
-            <AuditTrail entry={selectedEntry} show={true} />
-          ) : (
-            <div style={{ padding: 24, color: '#d32f2f', fontWeight: 500 }}>
-              No entry data found for this row.
-            </div>
+          {selectedEntry && (
+            <AuditTrail entry={selectedEntry} />
           )}
         </DialogContent>
         <DialogActions>
