@@ -37,6 +37,8 @@ const Dashboard = () => {
   const [blNoDialogOpen, setBlNoDialogOpen] = useState(false);
   const [blNoInput, setBlNoInput] = useState("");
   const [rowForBlNo, setRowForBlNo] = useState(null);
+  const [blReleaseConfirmOpen, setBlReleaseConfirmOpen] = useState(false);
+  const [rowForBlRelease, setRowForBlRelease] = useState(null);
 
   useEffect(() => {
     const fetchFpodMaster = async () => {
@@ -399,6 +401,10 @@ const Dashboard = () => {
   };
 
   const handleSaveEntry = async (updatedRow = editingEntry) => {
+    if (blReleaseConfirmOpen) {
+      // Wait for confirmation
+      return;
+    }
     try {
       const docRef = doc(db, "entries", updatedRow.id);
       const updateData = {
@@ -539,6 +545,9 @@ const Dashboard = () => {
         toast.error("All previous steps must be completed before releasing B/L.");
         return;
       }
+      setRowForBlRelease(row);
+      setBlReleaseConfirmOpen(true);
+      return;
     }
     // Only update editingEntry state
     setEditingEntry(prev => ({ ...prev, [field]: value }));
@@ -1267,6 +1276,23 @@ const Dashboard = () => {
         <DialogActions>
           <Button onClick={handleBlNoDialogClose}>Cancel</Button>
           <Button onClick={handleBlNoDialogSubmit} disabled={!blNoInput.trim()}>Submit</Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={blReleaseConfirmOpen} onClose={() => setBlReleaseConfirmOpen(false)}>
+        <DialogTitle>Confirm B/L Release</DialogTitle>
+        <DialogContent>
+          <p>Are you sure you want to mark this entry as B/L Released? This will move the entry to Completed Files.</p>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => { setBlReleaseConfirmOpen(false); setRowForBlRelease(null); }}>Cancel</Button>
+          <Button color="primary" onClick={async () => {
+            setBlReleaseConfirmOpen(false);
+            if (rowForBlRelease) {
+              setEditingEntry({ ...rowForBlRelease, blReleased: true });
+              await handleSaveEntry({ ...rowForBlRelease, blReleased: true });
+              setRowForBlRelease(null);
+            }
+          }}>Confirm</Button>
         </DialogActions>
       </Dialog>
     </div>
