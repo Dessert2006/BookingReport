@@ -4,6 +4,7 @@ import { collection, getDocs, doc, updateDoc, deleteDoc, getDoc } from "firebase
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { toast } from "react-toastify";
 import { Box, Button, Dialog, DialogTitle, DialogContent, DialogActions } from "@mui/material";
+import * as XLSX from 'xlsx';
 
 const Dashboard = () => {
   const [dashboardData, setDashboardData] = useState({
@@ -12,16 +13,14 @@ const Dashboard = () => {
     pendingCorrection: 0,
     pendingBL: 0,
     pendingInvoice: 0,
-    pendingDG: 0
+    pendingDG: 0,
+    pendingEmptyPickup: 0
   });
   const [shipmentsByDate, setShipmentsByDate] = useState([]);
   const [shipmentsByShipper, setShipmentsByShipper] = useState([]);
   const [detailedEntries, setDetailedEntries] = useState([]);
   const [selectedLocation, setSelectedLocation] = useState('All');
-  const [dateRange, setDateRange] = useState({
-    startDate: '',
-    endDate: ''
-  });
+  const [dateRange, setDateRange] = useState({ startDate: '', endDate: '' });
   const [loading, setLoading] = useState(true);
   const [showFilteredView, setShowFilteredView] = useState(false);
   const [filteredViewData, setFilteredViewData] = useState([]);
@@ -55,7 +54,6 @@ const Dashboard = () => {
     const today = new Date();
     const weekBack = new Date();
     weekBack.setDate(today.getDate() - 7);
-    
     setDateRange({
       startDate: weekBack.toISOString().split('T')[0],
       endDate: today.toISOString().split('T')[0]
@@ -66,21 +64,6 @@ const Dashboard = () => {
     if (!dateStr) return "";
     const [year, month, day] = dateStr.split("-");
     return `${day}-${month}-${year}`;
-  };
-
-  const parseDate = (dateStr) => {
-    if (!dateStr) return null;
-    const parts = dateStr.includes("-") ? dateStr.split("-") : [];
-    if (parts.length === 3) {
-      const [a, b, c] = parts;
-      if (parseInt(a, 10) <= 31 && parseInt(b, 10) <= 12) {
-        return new Date(`${c}-${b}-${a}`);
-      }
-      if (parseInt(a, 10) >= 1000) {
-        return new Date(`${a}-${b}-${c}`);
-      }
-    }
-    return null;
   };
 
   const parseAdvancedQuery = (query) => {
@@ -99,85 +82,64 @@ const Dashboard = () => {
     const parts = dateStr.includes("-") ? dateStr.split("-") : [];
     if (parts.length === 3) {
       const [a, b, c] = parts;
-      if (parseInt(a, 10) <= 31 && parseInt(b, 10) <= 12) {
-        return `${c}-${b}-${a}`;
-      }
-      if (parseInt(a, 10) >= 1000) {
-        return `${a}-${b}-${c}`;
-      }
+      if (parseInt(a, 10) <= 31 && parseInt(b, 10) <= 12) return `${c}-${b}-${a}`;
+      if (parseInt(a, 10) >= 1000) return `${a}-${b}-${c}`;
     }
     return null;
   };
 
   const handleSearchInFilteredView = (query) => {
     setSearchQuery(query);
-    
     if (!query.trim()) {
       setFilteredViewData(originalFilteredData);
       return;
     }
-
     const tokens = parseAdvancedQuery(query);
     const filtered = originalFilteredData.filter((entry) => {
       return tokens.every(token => {
         const textFields = [
-          "location", "customer", "line", "pol", "pod", "fpod", "vessel",
-          "bookingNo", "containerNo", "volume", "voyage", "blNo", "blType"
+          "location","customer","line","pol","pod","fpod","vessel",
+          "bookingNo","containerNo","volume","voyage","blNo","blType"
         ];
-        
         const textMatch = textFields.some(field => {
           let value = entry[field];
-          if (typeof value === 'object' && value?.name) {
-            value = value.name;
-          }
+          if (typeof value === 'object' && value?.name) value = value.name;
           return value && value.toString().toLowerCase().includes(token);
         });
-
-        const dateFields = ["bookingDate", "bookingValidity", "etd", "sobDate"];
+        const dateFields = ["bookingDate","bookingValidity","etd","sobDate"];
         const normalizedDate = normalizeDate(token);
-        const dateMatch = normalizedDate && dateFields.some(field => {
-          return entry[field] === normalizedDate;
-        });
-
+        const dateMatch = normalizedDate && dateFields.some(field => entry[field] === normalizedDate);
         const booleanFields = [
-          "vgmFiled", "siFiled", "finalDG", "firstPrinted", "correctionsFinalised",
-          "blReleased", "isfSent", "sob"
+          "vgmFiled","siFiled","finalDG","firstPrinted","correctionsFinalised",
+          "blReleased","isfSent","sob"
         ];
         const booleanMatch = booleanFields.some(field => {
-          if (token === "yes" || token === "true" || token === "filed") {
-            return entry[field] === true;
-          }
-          if (token === "no" || token === "false") {
-            return entry[field] === false;
-          }
+          if (token === "yes" || token === "true" || token === "filed") return entry[field] === true;
+          if (token === "no" || token === "false") return entry[field] === false;
           return false;
         });
-
         return textMatch || dateMatch || booleanMatch;
       });
     });
-
     setFilteredViewData(filtered);
   };
 
   useEffect(() => {
-    if (dateRange.startDate && dateRange.endDate) {
-      fetchDashboardData();
-    }
+    if (dateRange.startDate && dateRange.endDate) fetchDashboardData();
   }, [selectedLocation, dateRange]);
 
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
-      
+
       const entriesSnapshot = await getDocs(collection(db, "entries"));
       const completedSnapshot = await getDocs(collection(db, "completedFiles"));
-      
+
       const allEntries = [];
       const completedEntries = [];
 
-      entriesSnapshot.forEach((doc) => {
-        const data = { ...doc.data(), id: doc.id, status: 'active' };
+      entriesSnapshot.forEach((docSnap) => {
+        const data = { ...docSnap.data(), id: docSnap.id, status: 'active' };
         allEntries.push({
           ...data,
           location: data.location?.name || data.location || "",
@@ -185,12 +147,14 @@ const Dashboard = () => {
           line: data.line?.name || data.line || "",
           vessel: data.vessel?.name || data.vessel || "",
           fpod: data.fpod?.name || data.fpod || "",
-          blType: data.blType || ""
+          blType: data.blType || "",
+          // If containerNo is stored inside equipmentDetails array, prefer that
+          containerNo: (Array.isArray(data.equipmentDetails) && data.equipmentDetails[0] && data.equipmentDetails[0].containerNo) || data.containerNo || ""
         });
       });
 
-      completedSnapshot.forEach((doc) => {
-        const data = { ...doc.data(), id: doc.id, status: 'completed' };
+      completedSnapshot.forEach((docSnap) => {
+        const data = { ...docSnap.data(), id: docSnap.id, status: 'completed' };
         completedEntries.push({
           ...data,
           location: data.location?.name || data.location || "",
@@ -198,24 +162,19 @@ const Dashboard = () => {
           line: data.line?.name || data.line || "",
           vessel: data.vessel?.name || data.vessel || "",
           fpod: data.fpod?.name || data.fpod || "",
-          blType: data.blType || ""
+          blType: data.blType || "",
+          containerNo: (Array.isArray(data.equipmentDetails) && data.equipmentDetails[0] && data.equipmentDetails[0].containerNo) || data.containerNo || ""
         });
       });
 
       const allData = [...allEntries, ...completedEntries];
 
-      const filteredData = selectedLocation === 'All' 
-        ? allData 
+      // Location filter for charts/tables
+      const filteredData = selectedLocation === 'All'
+        ? allData
         : allData.filter(entry => entry.location === selectedLocation);
 
-      const shippedThisWeek = filteredData.filter(entry => {
-        if (!entry.etd) return false;
-        const etdDate = new Date(entry.etd);
-        const startDate = new Date(dateRange.startDate);
-        const endDate = new Date(dateRange.endDate);
-        return etdDate >= startDate && etdDate <= endDate;
-      }).length;
-
+      // PENDING metrics only consider ACTIVE entries
       const activeEntries = allEntries.filter(entry => {
         if (selectedLocation !== 'All' && entry.location !== selectedLocation) return false;
         return entry.status === 'active';
@@ -230,31 +189,35 @@ const Dashboard = () => {
         const dateStr = entry.invoiceDueDate || entry.etd;
         if (!dateStr) return false;
         const date = new Date(dateStr);
-        // Only show if firstPrinted is checked AND linerInvoice is unchecked
         return entry.firstPrinted && !entry.linerInvoice && date < today;
       }).length;
       const pendingDG = activeEntries.filter(entry => {
         const volume = entry.volume || "";
         return volume.toUpperCase().includes("HAZ") && !entry.finalDG;
       }).length;
+
+      const pendingEmptyPickup = activeEntries.filter(entry => {
+        const c = entry.containerNo || "";
+        return c.toString().trim() === "";
+      }).length;
+
       setDashboardData({
         pendingSI,
         pendingFirstPrint,
         pendingCorrection,
         pendingBL,
         pendingInvoice,
-        pendingDG
+        pendingDG,
+        pendingEmptyPickup
       });
 
+      // Build chart data from BOTH active + completed (so counts match)
       const dateMap = new Map();
       filteredData.forEach(entry => {
         if (entry.etd) {
           const etdDate = new Date(entry.etd);
           if (etdDate >= new Date(dateRange.startDate) && etdDate <= new Date(dateRange.endDate)) {
-            const dateStr = etdDate.toLocaleDateString('en-GB', { 
-              day: '2-digit',
-              month: 'short'
-            });
+            const dateStr = etdDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
             dateMap.set(dateStr, (dateMap.get(dateStr) || 0) + 1);
           }
         }
@@ -296,8 +259,8 @@ const Dashboard = () => {
 
       setDetailedEntries(detailedData);
 
-      window.dashboardData = { allEntries, completedEntries };
-
+      // Expose all buckets so we can filter for bar clicks across both
+      window.dashboardData = { allEntries, completedEntries, allData };
     } catch (error) {
       console.error("Error fetching dashboard data:", error);
     } finally {
@@ -306,24 +269,20 @@ const Dashboard = () => {
   };
 
   const handleDateChange = (field, value) => {
-    setDateRange(prev => ({
-      ...prev,
-      [field]: value
-    }));
+    setDateRange(prev => ({ ...prev, [field]: value }));
   };
 
   const clearDateRange = () => {
     const today = new Date();
     const weekBack = new Date();
     weekBack.setDate(today.getDate() - 7);
-    
     setDateRange({
       startDate: weekBack.toISOString().split('T')[0],
       endDate: today.toISOString().split('T')[0]
     });
   };
 
-  const handleDashboardClick = (filterType, allEntries, completedEntries) => {
+  const handleDashboardClick = (filterType, allEntries /* active only */) => {
     let filteredData = [];
     let title = '';
 
@@ -362,7 +321,6 @@ const Dashboard = () => {
           const dateStr = entry.invoiceDueDate || entry.etd;
           if (!dateStr) return false;
           const date = new Date(dateStr);
-          // Only show if firstPrinted is checked AND linerInvoice is unchecked
           if (!entry.firstPrinted) return false;
           if (entry.linerInvoice) return false;
           return date < new Date();
@@ -377,11 +335,18 @@ const Dashboard = () => {
         });
         title = 'Pending DG';
         break;
+      case 'emptyPickup':
+        filteredData = allEntries.filter(entry => {
+          if (selectedLocation !== 'All' && entry.location !== selectedLocation) return false;
+          const c = entry.containerNo || "";
+          return c.toString().trim() === "";
+        });
+        title = 'Empty Pickup';
+        break;
       default:
         return;
     }
 
-    // Sort by earliest ETD (ascending)
     filteredData = filteredData.sort((a, b) => {
       if (!a.etd && !b.etd) return 0;
       if (!a.etd) return 1;
@@ -397,16 +362,25 @@ const Dashboard = () => {
   };
 
   const handleEditEntry = (entry) => {
-    setEditingEntry({...entry});
+    if (entry.status === 'completed') {
+      toast.info('Completed files are read-only.');
+      return;
+    }
+    setEditingEntry({ ...entry });
   };
 
   const handleSaveEntry = async (updatedRow = editingEntry) => {
-    if (blReleaseConfirmOpen) {
-      // Wait for confirmation
+    if (!updatedRow) return;
+    if (updatedRow.status === 'completed') {
+      toast.info('Completed files are read-only.');
+      setEditingEntry(null);
       return;
     }
+    if (blReleaseConfirmOpen) return;
+
     try {
       const docRef = doc(db, "entries", updatedRow.id);
+      const originalEntry = filteredViewData.find(e => e.id === updatedRow.id) || null;
       const updateData = {
         bookingNo: updatedRow.bookingNo || "",
         volume: updatedRow.volume || "",
@@ -417,16 +391,13 @@ const Dashboard = () => {
         finalDG: Boolean(updatedRow.finalDG),
         blType: updatedRow.blType || "",
         blNo: updatedRow.blNo || "",
-        linerInvoice: Boolean(updatedRow.linerInvoice),
+        linerInvoice: Boolean(updatedRow.linerInvoice)
       };
 
+      // Customer handling (preserve object shape if original had object)
       if (typeof updatedRow.customer === 'string') {
-        const originalEntry = filteredViewData.find(entry => entry.id === updatedRow.id);
         if (originalEntry && typeof originalEntry.customer === 'object') {
-          updateData.customer = {
-            ...originalEntry.customer,
-            name: updatedRow.customer
-          };
+          updateData.customer = { ...originalEntry.customer, name: updatedRow.customer };
         } else {
           updateData.customer = { name: updatedRow.customer };
         }
@@ -434,12 +405,23 @@ const Dashboard = () => {
         updateData.customer = updatedRow.customer;
       }
 
-      // If BL Released is true, move to completedFiles and delete from entries
+      // Handle containerNo stored inside equipmentDetails array in the document
+      if (updatedRow.containerNo !== undefined) {
+        const origEquip = Array.isArray(originalEntry?.equipmentDetails) ? originalEntry.equipmentDetails : [];
+        if (origEquip.length > 0) {
+          const newEquip = origEquip.map((ed, idx) => idx === 0 ? { ...ed, containerNo: updatedRow.containerNo } : ed);
+          updateData.equipmentDetails = newEquip;
+        } else {
+          // create a minimal equipmentDetails array with containerNo
+          updateData.equipmentDetails = [{ containerNo: updatedRow.containerNo }];
+        }
+      }
+
       if (updateData.blReleased) {
         const entrySnap = await getDoc(docRef);
         if (entrySnap.exists()) {
           const entryData = entrySnap.data();
-          const completedData = { ...entryData, ...updateData };
+          const completedData = { ...entryData, ...updateData, status: 'completed' };
           try {
             await updateDoc(doc(db, "completedFiles", updatedRow.id), completedData);
           } catch {
@@ -453,20 +435,16 @@ const Dashboard = () => {
       }
 
       const updatedData = filteredViewData.map(entry =>
-        entry.id === updatedRow.id ? {
-          ...entry,
-          ...updateData,
-          customer: updateData.customer.name || updateData.customer
-        } : entry
+        entry.id === updatedRow.id
+          ? { ...entry, ...updateData }
+          : entry
       );
       setFilteredViewData(updatedData);
 
       const updatedOriginalData = originalFilteredData.map(entry =>
-        entry.id === updatedRow.id ? {
-          ...entry,
-          ...updateData,
-          customer: updateData.customer.name || updateData.customer
-        } : entry
+        entry.id === updatedRow.id
+          ? { ...entry, ...updateData }
+          : entry
       );
       setOriginalFilteredData(updatedOriginalData);
 
@@ -479,7 +457,13 @@ const Dashboard = () => {
     }
   };
 
-  const handleDeleteEntry = async (entryId) => {
+  const handleDeleteEntry = async (entry) => {
+    if (entry.status === 'completed') {
+      toast.info('Completed files cannot be deleted here.');
+      return;
+    }
+    const entryId = entry.id;
+
     const confirmDelete = window.confirm(
       '⚠️ DELETE CONFIRMATION ⚠️\n\n' +
       'Are you sure you want to delete this entry?\n\n' +
@@ -487,27 +471,30 @@ const Dashboard = () => {
       '🔴 The entry will be permanently removed from the database.\n\n' +
       'Click OK to proceed with deletion or Cancel to abort.'
     );
-    
-    if (confirmDelete) {
-      try {
-        await deleteDoc(doc(db, "entries", entryId));
-        const updatedData = filteredViewData.filter(entry => entry.id !== entryId);
-        setFilteredViewData(updatedData);
-        const updatedOriginalData = originalFilteredData.filter(entry => entry.id !== entryId);
-        setOriginalFilteredData(updatedOriginalData);
-        toast.success('Entry deleted successfully! ✅');
-        fetchDashboardData();
-      } catch (error) {
-        console.error('Error deleting entry:', error);
-        toast.error('Failed to delete entry. Please try again.');
-      }
-    } else {
+    if (!confirmDelete) {
       toast.info('Delete operation cancelled.');
+      return;
+    }
+
+    try {
+      await deleteDoc(doc(db, "entries", entryId));
+      const updatedData = filteredViewData.filter(e => e.id !== entryId);
+      setFilteredViewData(updatedData);
+      const updatedOriginalData = originalFilteredData.filter(e => e.id !== entryId);
+      setOriginalFilteredData(updatedOriginalData);
+      toast.success('Entry deleted successfully! ✅');
+      fetchDashboardData();
+    } catch (error) {
+      console.error('Error deleting entry:', error);
+      toast.error('Failed to delete entry. Please try again.');
     }
   };
 
-  // Refactored: Only update local editingEntry state, not DB
   const handleCheckboxEdit = (row, field, value) => {
+    if (row.status === 'completed') {
+      toast.info('Completed files are read-only.');
+      return;
+    }
     if (field === "siFiled" && value) {
       setRowForBlType(row);
       setSelectedBlType("");
@@ -531,13 +518,8 @@ const Dashboard = () => {
     if (field === "blReleased" && value) {
       const fieldsToCheck = ["vgmFiled", "siFiled", "firstPrinted", "correctionsFinalised"];
       const entryFpod = row.fpod || "";
-      const matchingFpod = fpodMaster.find(
-        (fpod) => fpod.toUpperCase() === entryFpod.toUpperCase()
-      );
-      if (
-        (matchingFpod && matchingFpod.toUpperCase().includes("USA")) ||
-        entryFpod.toUpperCase().includes("USA")
-      ) {
+      const matchingFpod = fpodMaster.find((fpod) => fpod.toUpperCase() === entryFpod.toUpperCase());
+      if ((matchingFpod && matchingFpod.toUpperCase().includes("USA")) || entryFpod.toUpperCase().includes("USA")) {
         fieldsToCheck.push("isfSent");
       }
       const allPrerequisitesMet = fieldsToCheck.every((prereqField) => row[prereqField] === true);
@@ -549,7 +531,6 @@ const Dashboard = () => {
       setBlReleaseConfirmOpen(true);
       return;
     }
-    // Only update editingEntry state
     setEditingEntry(prev => ({ ...prev, [field]: value }));
   };
 
@@ -558,15 +539,11 @@ const Dashboard = () => {
       toast.error("Please select BL Type");
       return;
     }
-    const updatedRow = {
-      ...rowForBlType,
-      siFiled: true,
-      blType: selectedBlType,
-    };
+    const updatedRow = { ...rowForBlType, siFiled: true, blType: selectedBlType };
     try {
       await handleSaveEntry(updatedRow);
       toast.success("SI Filed and BL Type updated successfully!");
-    } catch (error) {
+    } catch {
       toast.error("Failed to update SI Filed and BL Type.");
     }
     setSelectedBlType("");
@@ -585,15 +562,11 @@ const Dashboard = () => {
       toast.error("Please enter BL No");
       return;
     }
-    const updatedRow = {
-      ...rowForBlNo,
-      firstPrinted: true,
-      blNo: blNoInput.trim(),
-    };
+    const updatedRow = { ...rowForBlNo, firstPrinted: true, blNo: blNoInput.trim() };
     try {
       await handleSaveEntry(updatedRow);
       toast.success("First Print ticked and BL No updated successfully!");
-    } catch (error) {
+    } catch {
       toast.error("Failed to update First Print and BL No.");
     }
     setBlNoInput("");
@@ -610,33 +583,56 @@ const Dashboard = () => {
   const getChartDimensions = () => {
     switch(chartSize) {
       case 'small':
-        return { 
-          maxWidth: '600px', 
-          height: 220, 
-          fontSize: 10, 
-          barSize: 30,
-          margin: { top: 15, right: 20, left: 15, bottom: 50 }
-        };
+        return { maxWidth: '600px', height: 220, fontSize: 10, barSize: 30,
+          margin: { top: 15, right: 20, left: 15, bottom: 50 } };
       case 'large':
-        return { 
-          maxWidth: '1200px', 
-          height: 400, 
-          fontSize: 12, 
-          barSize: 60,
-          margin: { top: 30, right: 40, left: 30, bottom: 80 }
-        };
+        return { maxWidth: '1200px', height: 400, fontSize: 12, barSize: 60,
+          margin: { top: 30, right: 40, left: 30, bottom: 80 } };
       default:
-        return { 
-          maxWidth: '800px', 
-          height: 280, 
-          fontSize: 11, 
-          barSize: 40,
-          margin: { top: 20, right: 30, left: 20, bottom: 60 }
-        };
+        return { maxWidth: '800px', height: 280, fontSize: 11, barSize: 40,
+          margin: { top: 20, right: 30, left: 20, bottom: 60 } };
     }
   };
 
   const chartDimensions = getChartDimensions();
+
+  // Include BOTH active + completed when clicking the bar,
+  // so table count matches the bar count.
+  const handleBarClick = (barData) => {
+    const clickedLabel = barData?.payload?.date; // e.g., "12 Aug"
+    if (!clickedLabel) return;
+
+    const allData = window.dashboardData?.allData
+      || [ ...(window.dashboardData?.allEntries || []), ...(window.dashboardData?.completedEntries || []) ];
+
+    let filtered = allData.filter(entry => {
+      if (selectedLocation !== 'All' && entry.location !== selectedLocation) return false;
+      if (!entry.etd) return false;
+      const label = new Date(entry.etd).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+      return label === clickedLabel;
+    });
+
+    filtered = filtered.sort((a, b) => {
+      if (!a.etd && !b.etd) return 0;
+      if (!a.etd) return 1;
+      if (!b.etd) return -1;
+      return new Date(a.etd) - new Date(b.etd);
+    });
+
+    setOriginalFilteredData(filtered);
+    setFilteredViewData(filtered);
+    setFilterType(`Sailings on ${clickedLabel}`);
+    setSearchQuery('');
+    setEditingEntry(null);
+    setShowFilteredView(true);
+  };
+
+  const exportToExcel = (data, fileName) => {
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet1');
+    XLSX.writeFile(workbook, `${fileName}.xlsx`);
+  };
 
   if (loading) {
     return (
@@ -651,142 +647,29 @@ const Dashboard = () => {
   return (
     <div className="container-fluid">
       <style>{`
-        .dashboard-card {
-          border-radius: 15px;
-          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-          transition: transform 0.3s ease;
-        }
-        .dashboard-card:hover {
-          transform: translateY(-5px);
-        }
-        .metric-number {
-          font-size: 3rem;
-          font-weight: bold;
-          color: white;
-        }
-        .metric-label {
-          font-size: 0.9rem;
-          color: white;
-          opacity: 0.9;
-        }
-        .chart-container {
-          background: white;
-          border-radius: 15px;
-          padding: 20px;
-          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-          margin-bottom: 20px;
-        }
-        .location-btn {
-          margin: 5px;
-          padding: 8px 16px;
-          border: 2px solid #6c757d;
-          background: white;
-          color: #6c757d;
-          border-radius: 20px;
-          cursor: pointer;
-          font-weight: 600;
-          transition: all 0.3s ease;
-        }
-        .location-btn.active {
-          background: #6c757d;
-          color: white;
-        }
-        .location-btn:hover {
-          background: #6c757d;
-          color: white;
-        }
-        .table-container {
-          max-height: 400px;
-          overflow-y: auto;
-        }
-        .clickable-card {
-          cursor: pointer;
-          transition: all 0.3s ease;
-        }
-        .clickable-card:hover {
-          transform: translateY(-8px);
-          box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
-        }
-        .filtered-view {
-          position: fixed;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
-          background: rgba(0, 0, 0, 0.8);
-          z-index: 1050;
-          display: flex;
-          justify-content: center;
-          align-items: center;
-        }
-        .filtered-content {
-          background: white;
-          border-radius: 15px;
-          padding: 20px;
-          width: 95%;
-          height: 90%;
-          overflow-y: auto;
-        }
-        .edit-input {
-          border: 1px solid #ddd;
-          padding: 5px;
-          border-radius: 4px;
-          width: 100%;
-        }
-        .chart-size-controls {
-          display: flex;
-          gap: 10px;
-          justify-content: center;
-          align-items: center;
-          margin-bottom: 15px;
-        }
-        .size-btn {
-          padding: 6px 12px;
-          border: 2px solid #dee2e6;
-          background: white;
-          color: #6c757d;
-          border-radius: 6px;
-          cursor: pointer;
-          font-size: 12px;
-          font-weight: 600;
-          transition: all 0.2s ease;
-        }
-        .size-btn.active {
-          background: #2563eb;
-          color: white;
-          border-color: #2563eb;
-        }
-        .size-btn:hover {
-          border-color: #2563eb;
-          color: #2563eb;
-        }
-        .size-btn.active:hover {
-          background: #1d4ed8;
-          border-color: #1d4ed8;
-          color: white;
-        }
-        .search-container {
-          margin-bottom: 20px;
-        }
-        .search-input {
-          width: 100%;
-          padding: 12px 16px;
-          border: 2px solid #e3f2fd;
-          border-radius: 25px;
-          font-size: 16px;
-          outline: none;
-          transition: all 0.3s ease;
-        }
-        .search-input:focus {
-          border-color: #2196f3;
-          box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
-        }
-        .search-results-info {
-          margin-top: 10px;
-          font-size: 14px;
-          color: #666;
-          text-align: center;
-        }
+        .dashboard-card { border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,.1); transition: transform .3s ease; }
+        .dashboard-card:hover { transform: translateY(-5px); }
+        .metric-number { font-size: 3rem; font-weight: bold; color: white; }
+        .metric-label { font-size: .9rem; color: white; opacity: .9; }
+        .chart-container { background: white; border-radius: 15px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,.1); margin-bottom: 20px; }
+        .location-btn { margin: 5px; padding: 8px 16px; border: 2px solid #6c757d; background: white; color: #6c757d; border-radius: 20px; cursor: pointer; font-weight: 600; transition: all .3s ease; }
+        .location-btn.active, .location-btn:hover { background: #6c757d; color: white; }
+        .table-container { max-height: 400px; overflow-y: auto; }
+        .clickable-card { cursor: pointer; transition: all .3s ease; }
+        .clickable-card:hover { transform: translateY(-8px); box-shadow: 0 8px 25px rgba(0,0,0,.15); }
+        .filtered-view { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,.8); z-index:1050; display:flex; justify-content:center; align-items:center; }
+        .filtered-content { background:white; border-radius:15px; padding:20px; width:95%; height:90%; overflow-y:auto; }
+        .edit-input { border:1px solid #ddd; padding:5px; border-radius:4px; width:100%; }
+        .chart-size-controls { display:flex; gap:10px; justify-content:center; align-items:center; margin-bottom:15px; }
+        .size-btn { padding:6px 12px; border:2px solid #dee2e6; background:white; color:#6c757d; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600; transition: all .2s ease; }
+        .size-btn.active { background:#2563eb; color:white; border-color:#2563eb; }
+        .size-btn:hover { border-color:#2563eb; color:#2563eb; }
+        .size-btn.active:hover { background:#1d4ed8; border-color:#1d4ed8; color:white; }
+        .search-container { margin-bottom:20px; }
+        .search-input { width:100%; padding:12px 16px; border:2px solid #e3f2fd; border-radius:25px; font-size:16px; outline:none; transition: all .3s ease; }
+        .search-input:focus { border-color:#2196f3; box-shadow:0 0 0 3px rgba(33,150,243,.1); }
+        .search-results-info { margin-top:10px; font-size:14px; color:#666; text-align:center; }
+        .recharts-bar-rectangle { cursor: pointer; } /* bars look clickable */
       `}</style>
 
       <div className="row mb-4">
@@ -830,10 +713,7 @@ const Dashboard = () => {
               value={dateRange.endDate}
               onChange={(e) => handleDateChange('endDate', e.target.value)}
             />
-            <button 
-              className="btn btn-outline-secondary"
-              onClick={clearDateRange}
-            >
+            <button className="btn btn-outline-secondary" onClick={clearDateRange}>
               Reset to 1 week
             </button>
           </div>
@@ -842,63 +722,73 @@ const Dashboard = () => {
 
       <div className="row mb-4">
         <div className="col-md-2 mb-3">
-          <div 
-            className="dashboard-card clickable-card p-4 text-center" 
+          <div
+            className="dashboard-card clickable-card p-4 text-center"
             style={{ backgroundColor: '#ffc107' }}
-            onClick={() => handleDashboardClick('pendingSI', window.dashboardData?.allEntries || [], window.dashboardData?.completedEntries || [])}
+            onClick={() => handleDashboardClick('pendingSI', window.dashboardData?.allEntries || [])}
           >
             <div className="metric-number" style={{ color: '#212529' }}>{dashboardData.pendingSI}</div>
             <div className="metric-label" style={{ color: '#212529' }}>PENDING SI</div>
           </div>
         </div>
         <div className="col-md-2 mb-3">
-          <div 
-            className="dashboard-card clickable-card p-4 text-center" 
+          <div
+            className="dashboard-card clickable-card p-4 text-center"
             style={{ backgroundColor: '#17a2b8' }}
-            onClick={() => handleDashboardClick('pendingFirstPrint', window.dashboardData?.allEntries || [], window.dashboardData?.completedEntries || [])}
+            onClick={() => handleDashboardClick('pendingFirstPrint', window.dashboardData?.allEntries || [])}
           >
             <div className="metric-number">{dashboardData.pendingFirstPrint}</div>
             <div className="metric-label">PENDING FIRST PRINT</div>
           </div>
         </div>
         <div className="col-md-2 mb-3">
-          <div 
-            className="dashboard-card clickable-card p-4 text-center" 
+          <div
+            className="dashboard-card clickable-card p-4 text-center"
             style={{ backgroundColor: '#fd7e14' }}
-            onClick={() => handleDashboardClick('pendingCorrection', window.dashboardData?.allEntries || [], window.dashboardData?.completedEntries || [])}
+            onClick={() => handleDashboardClick('pendingCorrection', window.dashboardData?.allEntries || [])}
           >
             <div className="metric-number">{dashboardData.pendingCorrection}</div>
             <div className="metric-label">PENDING CORRECTION</div>
           </div>
         </div>
         <div className="col-md-2 mb-3">
-          <div 
-            className="dashboard-card clickable-card p-4 text-center" 
+          <div
+            className="dashboard-card clickable-card p-4 text-center"
             style={{ backgroundColor: '#e83e8c' }}
-            onClick={() => handleDashboardClick('pendingBL', window.dashboardData?.allEntries || [], window.dashboardData?.completedEntries || [])}
+            onClick={() => handleDashboardClick('pendingBL', window.dashboardData?.allEntries || [])}
           >
             <div className="metric-number">{dashboardData.pendingBL}</div>
             <div className="metric-label">PENDING BL</div>
           </div>
         </div>
         <div className="col-md-2 mb-3">
-          <div 
-            className="dashboard-card clickable-card p-4 text-center" 
+          <div
+            className="dashboard-card clickable-card p-4 text-center"
             style={{ backgroundColor: '#dc3545' }}
-            onClick={() => handleDashboardClick('pendingInvoice', window.dashboardData?.allEntries || [], window.dashboardData?.completedEntries || [])}
+            onClick={() => handleDashboardClick('pendingInvoice', window.dashboardData?.allEntries || [])}
           >
             <div className="metric-number">{dashboardData.pendingInvoice}</div>
             <div className="metric-label">PENDING INVOICE</div>
           </div>
         </div>
         <div className="col-md-2 mb-3">
-          <div 
-            className="dashboard-card clickable-card p-4 text-center" 
+          <div
+            className="dashboard-card clickable-card p-4 text-center"
             style={{ backgroundColor: '#6c757d' }}
-            onClick={() => handleDashboardClick('pendingDG', window.dashboardData?.allEntries || [], window.dashboardData?.completedEntries || [])}
+            onClick={() => handleDashboardClick('pendingDG', window.dashboardData?.allEntries || [])}
           >
             <div className="metric-number">{dashboardData.pendingDG}</div>
             <div className="metric-label">PENDING DG</div>
+          </div>
+        </div>
+        <div className="col-md-2 mb-3">
+          <div
+            className="dashboard-card clickable-card p-4 text-center"
+            style={{ backgroundColor: '#20c997' }}
+            onClick={() => handleDashboardClick('emptyPickup', window.dashboardData?.allEntries || [])}
+          >
+            <div className="metric-number">{dashboardData.pendingEmptyPickup}</div>
+            <div className="metric-label">EMPTY PICKUP</div>
           </div>
         </div>
       </div>
@@ -910,61 +800,48 @@ const Dashboard = () => {
               <h5 className="text-center mb-0 flex-grow-1">Shipments by Sailing Date (ETD)</h5>
               <div className="chart-size-controls">
                 <span style={{ fontSize: '12px', color: '#6c757d', marginRight: '10px' }}>Size:</span>
-                <button 
-                  className={`size-btn ${chartSize === 'small' ? 'active' : ''}`}
-                  onClick={() => setChartSize('small')}
-                >
-                  S
-                </button>
-                <button 
-                  className={`size-btn ${chartSize === 'medium' ? 'active' : ''}`}
-                  onClick={() => setChartSize('medium')}
-                >
-                  M
-                </button>
-                <button 
-                  className={`size-btn ${chartSize === 'large' ? 'active' : ''}`}
-                  onClick={() => setChartSize('large')}
-                >
-                  L
-                </button>
+                <button className={`size-btn ${chartSize === 'small' ? 'active' : ''}`} onClick={() => setChartSize('small')}>S</button>
+                <button className={`size-btn ${chartSize === 'medium' ? 'active' : ''}`} onClick={() => setChartSize('medium')}>M</button>
+                <button className={`size-btn ${chartSize === 'large' ? 'active' : ''}`} onClick={() => setChartSize('large')}>L</button>
               </div>
             </div>
             <ResponsiveContainer width="100%" height={chartDimensions.height}>
               <BarChart data={shipmentsByDate} margin={chartDimensions.margin}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
-                <XAxis 
-                  dataKey="date" 
+                <XAxis
+                  dataKey="date"
                   tick={{ fontSize: chartDimensions.fontSize }}
                   angle={-35}
                   textAnchor="end"
                   height={chartDimensions.margin.bottom}
                   interval={0}
                 />
-                <YAxis 
+                <YAxis
                   tick={{ fontSize: chartDimensions.fontSize }}
-                  label={{ 
-                    value: 'Shipments', 
-                    angle: -90, 
-                    position: 'insideLeft', 
-                    style: { fontSize: `${chartDimensions.fontSize + 1}px` } 
+                  label={{
+                    value: 'Shipments',
+                    angle: -90,
+                    position: 'insideLeft',
+                    style: { fontSize: `${chartDimensions.fontSize + 1}px` }
                   }}
                 />
-                <Tooltip 
+                <Tooltip
                   labelFormatter={(value) => `Date: ${value}`}
                   formatter={(value) => [`${value} shipments`, 'Total']}
-                  contentStyle={{ 
-                    backgroundColor: '#f8f9fa', 
+                  contentStyle={{
+                    backgroundColor: '#f8f9fa',
                     border: '1px solid #dee2e6',
                     borderRadius: '8px',
                     fontSize: `${chartDimensions.fontSize}px`
                   }}
                 />
-                <Bar 
-                  dataKey="shipments" 
+                <Bar
+                  dataKey="shipments"
                   fill="#2563eb"
                   radius={[3, 3, 0, 0]}
                   maxBarSize={chartDimensions.barSize}
+                  onClick={handleBarClick}
+                  style={{ cursor: 'pointer' }}
                 />
               </BarChart>
             </ResponsiveContainer>
@@ -977,7 +854,7 @@ const Dashboard = () => {
           <div className="filtered-content">
             <div className="d-flex justify-content-between align-items-center mb-4">
               <h3>{filterType} ({filteredViewData.length} entries)</h3>
-              <button 
+              <button
                 className="btn btn-secondary"
                 onClick={() => {
                   setShowFilteredView(false);
@@ -988,7 +865,7 @@ const Dashboard = () => {
                 ✕ Close
               </button>
             </div>
-            
+
             <div className="search-container">
               <input
                 type="text"
@@ -999,19 +876,26 @@ const Dashboard = () => {
               />
               {searchQuery && (
                 <div className="search-results-info">
-                  {filteredViewData.length === originalFilteredData.length 
+                  {filteredViewData.length === originalFilteredData.length
                     ? `Showing all ${filteredViewData.length} entries`
-                    : `Found ${filteredViewData.length} of ${originalFilteredData.length} entries matching "${searchQuery}"`
-                  }
+                    : `Found ${filteredViewData.length} of ${originalFilteredData.length} entries matching "${searchQuery}"`}
                 </div>
               )}
             </div>
-            
+
+            <button
+              className="btn btn-success mb-3"
+              onClick={() => exportToExcel(filteredViewData, 'FilteredData')}
+            >
+              Export to Excel
+            </button>
+
             <div className="table-responsive">
               <table className="table table-striped table-hover">
                 <thead className="table-dark">
                   <tr>
                     <th>Booking No</th>
+                    <th>Container No</th>
                     <th>Customer</th>
                     <th>Line</th>
                     <th>POL</th>
@@ -1027,17 +911,18 @@ const Dashboard = () => {
                     <th>Final DG</th>
                     <th>BL Type</th>
                     <th>Liner Invoice</th>
+                    <th>Status</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredViewData.length === 0 ? (
                     <tr>
-                      <td colSpan="17" className="text-center py-4">
+                      <td colSpan="19" className="text-center py-4">
                         {searchQuery ? (
                           <div>
                             <p>🔍 No entries found matching your search criteria.</p>
-                            <button 
+                            <button
                               className="btn btn-outline-primary btn-sm"
                               onClick={() => {
                                 setSearchQuery('');
@@ -1057,10 +942,10 @@ const Dashboard = () => {
                       <tr key={entry.id || index}>
                         <td>
                           {editingEntry?.id === entry.id ? (
-                            <input 
+                            <input
                               className="edit-input"
                               value={editingEntry.bookingNo || ''}
-                              onChange={(e) => setEditingEntry({...editingEntry, bookingNo: e.target.value})}
+                              onChange={(e) => setEditingEntry({ ...editingEntry, bookingNo: e.target.value })}
                             />
                           ) : (
                             entry.bookingNo || 'N/A'
@@ -1068,10 +953,21 @@ const Dashboard = () => {
                         </td>
                         <td>
                           {editingEntry?.id === entry.id ? (
-                            <input 
+                            <input
+                              className="edit-input"
+                              value={editingEntry.containerNo || ''}
+                              onChange={(e) => setEditingEntry({ ...editingEntry, containerNo: e.target.value })}
+                            />
+                          ) : (
+                            entry.containerNo || 'N/A'
+                          )}
+                        </td>
+                        <td>
+                          {editingEntry?.id === entry.id ? (
+                            <input
                               className="edit-input"
                               value={typeof editingEntry.customer === 'object' ? editingEntry.customer?.name || '' : editingEntry.customer || ''}
-                              onChange={(e) => setEditingEntry({...editingEntry, customer: e.target.value})}
+                              onChange={(e) => setEditingEntry({ ...editingEntry, customer: e.target.value })}
                             />
                           ) : (
                             typeof entry.customer === 'object' ? entry.customer?.name || 'N/A' : entry.customer || 'N/A'
@@ -1083,10 +979,10 @@ const Dashboard = () => {
                         <td>{entry.vessel || 'N/A'}</td>
                         <td>
                           {editingEntry?.id === entry.id ? (
-                            <input 
+                            <input
                               className="edit-input"
                               value={editingEntry.volume || ''}
-                              onChange={(e) => setEditingEntry({...editingEntry, volume: e.target.value})}
+                              onChange={(e) => setEditingEntry({ ...editingEntry, volume: e.target.value })}
                             />
                           ) : (
                             entry.volume || 'N/A'
@@ -1096,73 +992,63 @@ const Dashboard = () => {
                         <td>{formatDate(entry.etd) || 'N/A'}</td>
                         <td>
                           {editingEntry?.id === entry.id ? (
-                            <input 
+                            <input
                               type="checkbox"
                               checked={editingEntry.siFiled || false}
                               onChange={(e) => handleCheckboxEdit(entry, 'siFiled', e.target.checked)}
                               className="form-check-input"
                             />
                           ) : (
-                            <span className={`badge ${entry.siFiled ? 'bg-success' : 'bg-danger'}`}>
-                              {entry.siFiled ? 'Yes' : 'No'}
-                            </span>
+                            <span className={`badge ${entry.siFiled ? 'bg-success' : 'bg-danger'}`}>{entry.siFiled ? 'Yes' : 'No'}</span>
                           )}
                         </td>
                         <td>
                           {editingEntry?.id === entry.id ? (
-                            <input 
+                            <input
                               type="checkbox"
                               checked={editingEntry.firstPrinted || false}
                               onChange={(e) => handleCheckboxEdit(entry, 'firstPrinted', e.target.checked)}
                               className="form-check-input"
                             />
                           ) : (
-                            <span className={`badge ${entry.firstPrinted ? 'bg-success' : 'bg-danger'}`}>
-                              {entry.firstPrinted ? 'Yes' : 'No'}
-                            </span>
+                            <span className={`badge ${entry.firstPrinted ? 'bg-success' : 'bg-danger'}`}>{entry.firstPrinted ? 'Yes' : 'No'}</span>
                           )}
                         </td>
                         <td>
                           {editingEntry?.id === entry.id ? (
-                            <input 
+                            <input
                               type="checkbox"
                               checked={editingEntry.correctionsFinalised || false}
                               onChange={(e) => handleCheckboxEdit(entry, 'correctionsFinalised', e.target.checked)}
                               className="form-check-input"
                             />
                           ) : (
-                            <span className={`badge ${entry.correctionsFinalised ? 'bg-success' : 'bg-danger'}`}>
-                              {entry.correctionsFinalised ? 'Yes' : 'No'}
-                            </span>
+                            <span className={`badge ${entry.correctionsFinalised ? 'bg-success' : 'bg-danger'}`}>{entry.correctionsFinalised ? 'Yes' : 'No'}</span>
                           )}
                         </td>
                         <td>
                           {editingEntry?.id === entry.id ? (
-                            <input 
+                            <input
                               type="checkbox"
                               checked={editingEntry.blReleased || false}
                               onChange={(e) => handleCheckboxEdit(entry, 'blReleased', e.target.checked)}
                               className="form-check-input"
                             />
                           ) : (
-                            <span className={`badge ${entry.blReleased ? 'bg-success' : 'bg-danger'}`}>
-                              {entry.blReleased ? 'Yes' : 'No'}
-                            </span>
+                            <span className={`badge ${entry.blReleased ? 'bg-success' : 'bg-danger'}`}>{entry.blReleased ? 'Yes' : 'No'}</span>
                           )}
                         </td>
                         <td>
                           {entry.volume?.toUpperCase().includes('HAZ') ? (
                             editingEntry?.id === entry.id ? (
-                              <input 
+                              <input
                                 type="checkbox"
                                 checked={editingEntry.finalDG || false}
                                 onChange={(e) => handleCheckboxEdit(entry, 'finalDG', e.target.checked)}
                                 className="form-check-input"
                               />
                             ) : (
-                              <span className={`badge ${entry.finalDG ? 'bg-success' : 'bg-danger'}`}>
-                                {entry.finalDG ? 'Yes' : 'No'}
-                              </span>
+                              <span className={`badge ${entry.finalDG ? 'bg-success' : 'bg-danger'}`}>{entry.finalDG ? 'Yes' : 'No'}</span>
                             )
                           ) : (
                             <span className="badge bg-secondary">N/A</span>
@@ -1170,10 +1056,10 @@ const Dashboard = () => {
                         </td>
                         <td>
                           {editingEntry?.id === entry.id ? (
-                            <input 
+                            <input
                               className="edit-input"
                               value={editingEntry.blType || ''}
-                              onChange={(e) => setEditingEntry({...editingEntry, blType: e.target.value})}
+                              onChange={(e) => setEditingEntry({ ...editingEntry, blType: e.target.value })}
                             />
                           ) : (
                             entry.blType || 'N/A'
@@ -1181,48 +1067,33 @@ const Dashboard = () => {
                         </td>
                         <td>
                           {editingEntry?.id === entry.id ? (
-                            <input 
+                            <input
                               type="checkbox"
                               checked={editingEntry.linerInvoice || false}
-                              onChange={(e) => setEditingEntry({...editingEntry, linerInvoice: e.target.checked})}
+                              onChange={(e) => setEditingEntry({ ...editingEntry, linerInvoice: e.target.checked })}
                               className="form-check-input"
                             />
                           ) : (
-                            <span className={`badge ${entry.linerInvoice ? 'bg-success' : 'bg-danger'}`}>
-                              {entry.linerInvoice ? 'Yes' : 'No'}
-                            </span>
+                            <span className={`badge ${entry.linerInvoice ? 'bg-success' : 'bg-danger'}`}>{entry.linerInvoice ? 'Yes' : 'No'}</span>
                           )}
+                        </td>
+                        <td>
+                          <span className={`badge ${entry.status === 'completed' ? 'bg-secondary' : 'bg-primary'}`}>
+                            {entry.status === 'completed' ? 'Completed' : 'Active'}
+                          </span>
                         </td>
                         <td>
                           {editingEntry?.id === entry.id ? (
                             <div className="d-flex gap-1">
-                              <button 
-                                className="btn btn-success btn-sm"
-                                onClick={() => handleSaveEntry()}
-                              >
-                                Save
-                              </button>
-                              <button 
-                                className="btn btn-secondary btn-sm"
-                                onClick={() => setEditingEntry(null)}
-                              >
-                                Cancel
-                              </button>
+                              <button className="btn btn-success btn-sm" onClick={() => handleSaveEntry()}>Save</button>
+                              <button className="btn btn-secondary btn-sm" onClick={() => setEditingEntry(null)}>Cancel</button>
                             </div>
+                          ) : entry.status === 'completed' ? (
+                            <span className="text-muted">—</span>
                           ) : (
                             <div className="d-flex gap-1">
-                              <button 
-                                className="btn btn-primary btn-sm"
-                                onClick={() => handleEditEntry(entry)}
-                              >
-                                Edit
-                              </button>
-                              <button 
-                                className="btn btn-danger btn-sm"
-                                onClick={() => handleDeleteEntry(entry.id)}
-                              >
-                                Delete
-                              </button>
+                              <button className="btn btn-primary btn-sm" onClick={() => handleEditEntry(entry)}>Edit</button>
+                              <button className="btn btn-danger btn-sm" onClick={() => handleDeleteEntry(entry)}>Delete</button>
                             </div>
                           )}
                         </td>
@@ -1240,18 +1111,8 @@ const Dashboard = () => {
         <DialogTitle>Select BL Type</DialogTitle>
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
-            <Button
-              variant={selectedBlType === 'OBL' ? 'contained' : 'outlined'}
-              onClick={() => setSelectedBlType('OBL')}
-            >
-              OBL
-            </Button>
-            <Button
-              variant={selectedBlType === 'SEAWAY' ? 'contained' : 'outlined'}
-              onClick={() => setSelectedBlType('SEAWAY')}
-            >
-              SEAWAY
-            </Button>
+            <Button variant={selectedBlType === 'OBL' ? 'contained' : 'outlined'} onClick={() => setSelectedBlType('OBL')}>OBL</Button>
+            <Button variant={selectedBlType === 'SEAWAY' ? 'contained' : 'outlined'} onClick={() => setSelectedBlType('SEAWAY')}>SEAWAY</Button>
           </Box>
         </DialogContent>
         <DialogActions>
@@ -1259,6 +1120,7 @@ const Dashboard = () => {
           <Button onClick={handleBlTypeDialogSubmit} disabled={!selectedBlType}>Submit</Button>
         </DialogActions>
       </Dialog>
+
       <Dialog open={blNoDialogOpen} onClose={handleBlNoDialogClose}>
         <DialogTitle>Enter BL No</DialogTitle>
         <DialogContent>
@@ -1278,6 +1140,7 @@ const Dashboard = () => {
           <Button onClick={handleBlNoDialogSubmit} disabled={!blNoInput.trim()}>Submit</Button>
         </DialogActions>
       </Dialog>
+
       <Dialog open={blReleaseConfirmOpen} onClose={() => setBlReleaseConfirmOpen(false)}>
         <DialogTitle>Confirm B/L Release</DialogTitle>
         <DialogContent>
@@ -1285,14 +1148,19 @@ const Dashboard = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => { setBlReleaseConfirmOpen(false); setRowForBlRelease(null); }}>Cancel</Button>
-          <Button color="primary" onClick={async () => {
-            setBlReleaseConfirmOpen(false);
-            if (rowForBlRelease) {
-              setEditingEntry({ ...rowForBlRelease, blReleased: true });
-              await handleSaveEntry({ ...rowForBlRelease, blReleased: true });
-              setRowForBlRelease(null);
-            }
-          }}>Confirm</Button>
+          <Button
+            color="primary"
+            onClick={async () => {
+              setBlReleaseConfirmOpen(false);
+              if (rowForBlRelease) {
+                setEditingEntry({ ...rowForBlRelease, blReleased: true });
+                await handleSaveEntry({ ...rowForBlRelease, blReleased: true });
+                setRowForBlRelease(null);
+              }
+            }}
+          >
+            Confirm
+          </Button>
         </DialogActions>
       </Dialog>
     </div>
