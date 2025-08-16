@@ -9,6 +9,12 @@ import * as XLSX from "xlsx";
 import axios from 'axios';
 import AuditTrail from "../components/AuditTrail";
 
+const norm = (s) => (s ?? "")
+  .toString()
+  .trim()
+  .replace(/\s+/g, " ")
+  .toUpperCase();
+
 // Clean CSS for single grid
 const styles = `
   .highlight-row {
@@ -335,6 +341,7 @@ function Entries(props) {
         const entryData = { ...docSnap.data(), id: docSnap.id };
         let customerObj = entryData.customer;
         if (typeof customerObj === 'string') {
+          const target = norm(customerObj);
           customerObj = customerMasterList.find(item => item.name === customerObj) || { 
             name: customerObj, 
             salesPerson: "", 
@@ -387,7 +394,7 @@ function Entries(props) {
         console.log('containerNo for entry', docSnap.id, ':', containerNo);
 
         if (entryData.location) {
-          locationSet.add(entryData.location);
+          locationSet.add(entryData.location?.name || entryData.location || "");
         }
       });
 
@@ -486,7 +493,9 @@ function Entries(props) {
       let customerData = newRow.customer;
       if (typeof newRow.customer === 'string') {
         const customerDoc = await getDoc(doc(db, "newMaster", "customer"));
-        customerData = customerDoc.data()?.list.find(item => item.name === newRow.customer) || { 
+        const list = customerDoc.data()?.list || [];
+        const target = norm(newRow.customer);
+        customerData = list.find(item => norm(item.name) === target) || { 
           name: newRow.customer,
           customerEmail: "",
           salesPersonEmail: ""
