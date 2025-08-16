@@ -1,10 +1,19 @@
 import React, { useState, useEffect } from "react";
 import { db } from "../firebase";
-import { collection, addDoc, getDoc, doc, updateDoc, setDoc, arrayUnion, getDocs, query, where } from "firebase/firestore";
+import { collection, addDoc, getDoc, doc, updateDoc, setDoc, arrayUnion, getDocs, query } from "firebase/firestore";
 import Select from "react-select";
 import { toast } from "react-toastify";
 import { getDefaultAuditFields } from "../utils/audit";
 import { getAuth } from "firebase/auth";
+
+// Helper: today's date as YYYY-MM-DD
+const getTodayDateString = () => {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
 
 function AddBooking({ auth }) {
   const [newEntry, setNewEntry] = useState({
@@ -99,7 +108,7 @@ function AddBooking({ auth }) {
       const docRef = doc(db, "newMaster", field);
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
-        newMasterData[field + (field === "equipmentType" ? "s" : "s")] = 
+        newMasterData[field + (field === "equipmentType" ? "s" : "s")] =
           (docSnap.data().list || [])
             .map(item => {
               if (field === "fpod") {
@@ -108,7 +117,7 @@ function AddBooking({ auth }) {
                 return item.name || item.type || item || "";
               }
             })
-            .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })); // Sort alphabetically
+            .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
       }
     }
     setMasterData(newMasterData);
@@ -360,6 +369,7 @@ function AddBooking({ auth }) {
           return;
         }
 
+        // Validate cut-offs
         const cutOffRegex = /^\d{2}\/\d{2}-\d{4} HRS$/;
         if (newEntry.portCutOff && !cutOffRegex.test(newEntry.portCutOff)) {
           toast.error("Port CutOff must be in the format DD/MM-HHMM HRS (e.g., 06/06-1800 HRS)");
@@ -370,6 +380,16 @@ function AddBooking({ auth }) {
           return;
         }
 
+        // ✅ ETD must be today or future (allow blank)
+        if (newEntry.etd) {
+          const todayStr = getTodayDateString();
+          if (newEntry.etd < todayStr) {
+            toast.error("ETD must be today or later.");
+            return;
+          }
+        }
+
+        // Validate equipment
         for (const detail of newEntry.equipmentDetails) {
           const numericQty = parseInt(detail.qty, 10);
           if (isNaN(numericQty) || numericQty <= 0) {
@@ -395,8 +415,8 @@ function AddBooking({ auth }) {
         const auditFields = getDefaultAuditFields(username);
 
         const entryData = {
-          ...newEntry, 
-          equipmentDetails: equipmentDetailsWithContainerNo, 
+          ...newEntry,
+          equipmentDetails: equipmentDetailsWithContainerNo,
           volume: finalVolume,
           vgmFiled: false,
           siFiled: false,
@@ -417,14 +437,14 @@ function AddBooking({ auth }) {
         await addDoc(collection(db, "entries"), entryData);
 
         await confirmAndAddToMaster("location", { name: newEntry.location });
-        await confirmAndAddToMaster("customer", { 
-          name: newEntry.customer, 
-          contactPerson: "", 
-          customerEmail: [], 
-          contactNumber: "", 
-          address: "", 
-          salesPerson: "", 
-          salesPersonEmail: [] 
+        await confirmAndAddToMaster("customer", {
+          name: newEntry.customer,
+          contactPerson: "",
+          customerEmail: [],
+          contactNumber: "",
+          address: "",
+          salesPerson: "",
+          salesPersonEmail: []
         });
         await confirmAndAddToMaster("line", { name: newEntry.line });
         await confirmAndAddToMaster("pol", { name: newEntry.pol });
@@ -497,6 +517,7 @@ function AddBooking({ auth }) {
     }
   };
 
+  // Enforce uppercase for non-date fields and clamp ETD >= today
   const handleChange = (field, value) => {
     if (field === "bookingDate" || field === "bookingValidity" || field === "etd") {
       setNewEntry({ ...newEntry, [field]: value });
@@ -504,7 +525,13 @@ function AddBooking({ auth }) {
       setNewEntry({ ...newEntry, [field]: value.toUpperCase() });
     }
   };
-
+  const handleEtdBlur = () => {
+    if (!newEntry.etd) return;
+    const todayStr = getTodayDateString();
+    if (newEntry.etd < todayStr) {
+      toast.error("ETD must be today or later.");
+    }
+  };
   const handleEquipmentDetailChange = (index, key, value) => {
     const updatedDetails = [...newEntry.equipmentDetails];
     if (key === "qty") {
@@ -541,7 +568,7 @@ function AddBooking({ auth }) {
       { label: `➕ Add New ${field.charAt(0).toUpperCase() + field.slice(1)}`, value: "add_new" },
       ...optionsList
         .map(s => ({ label: s, value: s }))
-        .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' })) // Sort alphabetically
+        .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }))
     ];
 
     const customSelectStyles = {
@@ -589,7 +616,7 @@ function AddBooking({ auth }) {
               ➕ Add
             </button>
           </div>
-          
+
           {newEntry.equipmentDetails.length === 0 && (
             <div className="text-center py-2" style={{ backgroundColor: '#f8f9fa', borderRadius: '6px', border: '1px dashed #dee2e6' }}>
               <p className="text-muted mb-1" style={{ fontSize: '12px' }}>No equipment added</p>
@@ -611,7 +638,7 @@ function AddBooking({ auth }) {
                   <label className="form-label text-muted" style={{ fontSize: '11px', fontWeight: '600' }}>Type</label>
                   <Select
                     options={options}
-                    value={options.find(option => option.value === detail.equipmentType) || 
+                    value={options.find(option => option.value === detail.equipmentType) ||
                            (detail.equipmentType ? { label: detail.equipmentType, value: detail.equipmentType } : null)}
                     onChange={(selected) => {
                       if (selected && selected.value === "add_new") {
@@ -674,7 +701,7 @@ function AddBooking({ auth }) {
               </div>
             </div>
           ))}
-          
+
           <div className="modal fade" id={`${field}Modal`} tabIndex="-1" aria-labelledby={`${field}ModalLabel`} aria-hidden="true">
             <div className="modal-dialog modal-dialog-centered">
               <div className="modal-content" style={{ borderRadius: '12px', border: 'none', boxShadow: '0 5px 20px rgba(0,0,0,0.1)' }}>
@@ -1109,7 +1136,13 @@ function AddBooking({ auth }) {
           </div>
           <div>
             <label className="form-label-compact">ETD</label>
-            <input type="date" className="form-control-compact form-control" value={newEntry.etd} onChange={e => handleChange("etd", e.target.value)} />
+            <input
+              type="date"
+              className="form-control-compact form-control"
+              value={newEntry.etd}
+              onChange={e => handleChange("etd", e.target.value)}
+              min={getTodayDateString()}  // Prevent selecting past dates
+            />
           </div>
         </div>
         <div className="row mt-2">
