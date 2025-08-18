@@ -583,11 +583,7 @@ function Entries(props) {
   /* ------------------------------ row updating ------------------------------ */
   const handleProcessRowUpdate = async (newRow, oldRow) => {
     try {
-      // Validate volume length
-      if (newRow.volume && newRow.volume.length > 10) {
-        toast.error("Volume cannot exceed 10 characters.");
-        throw new Error("Volume length exceeds limit");
-      }
+  // No length limit enforced for volume edits. Keep the full value provided by the user.
 
       const formattedPortCutOff = newRow.portCutOff
         ? formatCutOffInput(newRow.portCutOff)
@@ -721,6 +717,34 @@ function Entries(props) {
         }
       }
 
+      // ensure volume isn't 'undefined x undefined' - derive from equipmentDetails if needed
+      let finalVolume = newRow.volume;
+      if (typeof finalVolume !== "string" || finalVolume.trim() === "") {
+        if (Array.isArray(newRow.equipmentDetails) && newRow.equipmentDetails.length > 0) {
+          finalVolume = newRow.equipmentDetails
+            .map((d) => {
+              const q = d?.qty || "";
+              const t = d?.equipmentType || "";
+              if (!q && !t) return "";
+              return `${q} x ${t}`.trim();
+            })
+            .filter(Boolean)
+            .join(", ");
+        } else {
+          finalVolume = finalVolume || "";
+        }
+      } else {
+        // if someone somehow entered the literal 'undefined x undefined' fix it
+        if (finalVolume.toLowerCase().includes("undefined x undefined")) {
+          if (Array.isArray(newRow.equipmentDetails) && newRow.equipmentDetails.length > 0) {
+            finalVolume = newRow.equipmentDetails
+              .map((d) => `${d?.qty || ""} x ${d?.equipmentType || ""}`.trim())
+              .filter(Boolean)
+              .join(", ");
+          }
+        }
+      }
+
       const formattedRow = {
         ...newRow,
         actions: allActions,
@@ -733,14 +757,14 @@ function Entries(props) {
         customerEmail: customerData.customerEmail || "",
         salesPersonEmail: customerData.salesPersonEmail || "",
         volume:
-          typeof newRow.volume === "string" && newRow.volume.includes(",")
+          typeof finalVolume === "string" && finalVolume.includes(",")
             ? fixConcatenatedData(
-                newRow.volume
+                finalVolume
                   .split(",")
                   .map((v) => v.trim())
                   .join(", ")
               )
-            : newRow.volume,
+            : finalVolume,
         equipmentDetails: updatedEquipmentDetails
       };
 
