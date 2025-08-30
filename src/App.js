@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { BrowserRouter as Router, Routes, Route, Link, Navigate } from "react-router-dom";
+import { Navbar, Nav, Container, Button } from "react-bootstrap";
+
 import MasterData from "./pages/MasterData";
 import AddBooking from "./pages/AddBooking";
 import Entries from "./pages/Entries";
@@ -8,14 +10,19 @@ import CompletedFiles from "./pages/CompletedFiles";
 import BookingRequestForm from "./pages/BookingRequestForm";
 import Dashboard from "./components/Dashboard";
 import Login from "./pages/Login";
-import { ToastContainer } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
 import AdminPanel from "./pages/AdminPanel";
-import { updateDoc, doc } from "firebase/firestore";
-import { db } from "./firebase"; // Adjust the import based on your file structure
+import Locals from "./pages/Locals";
 
-function ProtectedRoute({ isLoggedIn, children, permissions, page }) {
+import { ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+import "bootstrap/dist/css/bootstrap.min.css"; // make sure this is in index.js too
+
+import { updateDoc, doc } from "firebase/firestore";
+import { db } from "./firebase";
+
+function ProtectedRoute({ isLoggedIn, children, permissions, page, role }) {
   if (!isLoggedIn) return <Navigate to="/login" />;
+  if (role === "admin") return children;
   if (permissions && !permissions.includes(page)) return <div>Access Denied</div>;
   return children;
 }
@@ -32,68 +39,140 @@ function App() {
 
   return (
     <Router>
-      <div className="container-fluid">
-        {/* Navbar */}
+      <div className="container-fluid p-0">
         {auth.isLoggedIn && (
-          <nav className="navbar navbar-expand-lg navbar-dark bg-primary">
-            <div className="container-fluid">
-              <Link className="navbar-brand" to="/">📊 Dashboard</Link>
-              {/* Hamburger for mobile */}
-              <button
-                className="navbar-toggler"
-                type="button"
-                data-bs-toggle="collapse"
-                data-bs-target="#navbarNav"
-                aria-controls="navbarNav"
-                aria-expanded="false"
-                aria-label="Toggle navigation"
-              >
-                <span className="navbar-toggler-icon"></span>
-              </button>
-              {/* Collapsible nav menu */}
-              <div className="collapse navbar-collapse" id="navbarNav">
-                <ul className="navbar-nav me-auto mb-2 mb-lg-0">
-                  {auth.permissions.includes("dashboard") && <li className="nav-item"><Link className="nav-link" to="/">Dashboard</Link></li>}
-                  {auth.permissions.includes("addBooking") && <li className="nav-item"><Link className="nav-link" to="/booking">Add Booking Entry</Link></li>}
-                  {auth.permissions.includes("entries") && <li className="nav-item"><Link className="nav-link" to="/entries">View Entries</Link></li>}
-                  {auth.permissions.includes("completedFiles") && <li className="nav-item"><Link className="nav-link" to="/completed-files">Completed Files</Link></li>}
-                  {auth.permissions.includes("master") && <li className="nav-item"><Link className="nav-link" to="/master">Add Master Data</Link></li>}
-                  {auth.permissions.includes("manageMaster") && <li className="nav-item"><Link className="nav-link" to="/manage-master">Manage Master Data</Link></li>}
-                  {auth.permissions.includes("bookingRequest") && <li className="nav-item"><Link className="nav-link" to="/booking-request">Booking Request Form</Link></li>}
-                  {auth.role === "admin" && (
-                    <li className="nav-item">
-                      <Link className="nav-link" to="/admin-panel">Admin Panel</Link>
-                    </li>
+          <Navbar bg="primary" variant="dark" expand="lg">
+            <Container fluid>
+              <Navbar.Brand>Booking Portal</Navbar.Brand>
+              <Navbar.Toggle aria-controls="navbar-nav" />
+              <Navbar.Collapse id="navbar-nav">
+                <Nav className="me-auto align-items-center">
+                  {auth.permissions.includes("dashboard") && (
+                    <Nav.Link as={Link} to="/" className="mx-2 text-nowrap">Dashboard</Nav.Link>
                   )}
-                </ul>
-                <span className="navbar-text text-white me-3 fw-bold" style={{ letterSpacing: 1 }}>
+                  {auth.permissions.includes("addBooking") && (
+                    <Nav.Link as={Link} to="/booking" className="mx-2 text-nowrap">Add Booking</Nav.Link>
+                  )}
+                  {auth.permissions.includes("entries") && (
+                    <Nav.Link as={Link} to="/entries" className="mx-2 text-nowrap">View Entries</Nav.Link>
+                  )}
+                  {auth.permissions.includes("completedFiles") && (
+                    <Nav.Link as={Link} to="/completed-files" className="mx-2 text-nowrap">Completed Files</Nav.Link>
+                  )}
+                  {auth.permissions.includes("master") && (
+                    <Nav.Link as={Link} to="/master" className="mx-2 text-nowrap">Add Master</Nav.Link>
+                  )}
+                  {auth.permissions.includes("manageMaster") && (
+                    <Nav.Link as={Link} to="/manage-master" className="mx-2 text-nowrap">Manage Master</Nav.Link>
+                  )}
+                  {auth.permissions.includes("bookingRequest") && (
+                    <Nav.Link as={Link} to="/booking-request" className="mx-2 text-nowrap">Booking Request</Nav.Link>
+                  )}
+                  {(auth.role === "admin" || auth.permissions.includes("locals")) && (
+                    <Nav.Link as={Link} to="/locals" className="mx-2 text-nowrap">Locals</Nav.Link>
+                  )}
+                  {auth.role === "admin" && (
+                    <Nav.Link as={Link} to="/admin-panel" className="mx-2 text-nowrap">Admin</Nav.Link>
+                  )}
+                </Nav>
+                <Navbar.Text className="text-white fw-bold me-3 text-nowrap">
                   {auth.username}
-                </span>
-                <button className="btn btn-outline-light" onClick={async () => {
-                  if (auth.id) {
-                    await updateDoc(doc(db, "users", auth.id), { active: false });
-                  }
-                  setAuth({ isLoggedIn: false, role: null, permissions: [], username: null, id: null });
-                }}>Logout</button>
-              </div>
-            </div>
-          </nav>
+                </Navbar.Text>
+                <Button
+                  variant="outline-light"
+                  size="sm"
+                  onClick={async () => {
+                    if (auth.id) {
+                      await updateDoc(doc(db, "users", auth.id), { active: false });
+                    }
+                    setAuth({ isLoggedIn: false, role: null, permissions: [], username: null, id: null });
+                  }}
+                >
+                  Logout
+                </Button>
+              </Navbar.Collapse>
+            </Container>
+          </Navbar>
         )}
-        {/* Main Content Area */}
+
         <div className="container-fluid mt-4">
           <Routes>
             <Route path="/login" element={<Login setAuth={setAuth} />} />
-            <Route path="/" element={<ProtectedRoute isLoggedIn={auth.isLoggedIn} permissions={auth.permissions} page="dashboard"><Dashboard /></ProtectedRoute>} />
-            <Route path="/booking-request" element={<ProtectedRoute isLoggedIn={auth.isLoggedIn} permissions={auth.permissions} page="bookingRequest"><BookingRequestForm /></ProtectedRoute>} />
-            <Route path="/booking" element={<ProtectedRoute isLoggedIn={auth.isLoggedIn} permissions={auth.permissions} page="addBooking"><AddBooking auth={auth} /></ProtectedRoute>} />
-            <Route path="/entries" element={<ProtectedRoute isLoggedIn={auth.isLoggedIn} permissions={auth.permissions} page="entries"><Entries auth={auth} /></ProtectedRoute>} />
-            <Route path="/completed-files" element={<ProtectedRoute isLoggedIn={auth.isLoggedIn} permissions={auth.permissions} page="completedFiles"><CompletedFiles /></ProtectedRoute>} />
-            <Route path="/master" element={<ProtectedRoute isLoggedIn={auth.isLoggedIn} permissions={auth.permissions} page="master"><MasterData /></ProtectedRoute>} />
-            <Route path="/manage-master" element={<ProtectedRoute isLoggedIn={auth.isLoggedIn} permissions={auth.permissions} page="manageMaster"><MasterDataManager /></ProtectedRoute>} />
-            <Route path="/admin-panel" element={<ProtectedRoute isLoggedIn={auth.isLoggedIn} permissions={auth.permissions} page="manageMaster"><AdminPanel /></ProtectedRoute>} />
+            <Route
+              path="/"
+              element={
+                <ProtectedRoute isLoggedIn={auth.isLoggedIn} permissions={auth.permissions} page="dashboard" role={auth.role}>
+                  <Dashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/booking-request"
+              element={
+                <ProtectedRoute isLoggedIn={auth.isLoggedIn} permissions={auth.permissions} page="bookingRequest" role={auth.role}>
+                  <BookingRequestForm />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/booking"
+              element={
+                <ProtectedRoute isLoggedIn={auth.isLoggedIn} permissions={auth.permissions} page="addBooking" role={auth.role}>
+                  <AddBooking auth={auth} />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/entries"
+              element={
+                <ProtectedRoute isLoggedIn={auth.isLoggedIn} permissions={auth.permissions} page="entries" role={auth.role}>
+                  <Entries auth={auth} />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/completed-files"
+              element={
+                <ProtectedRoute isLoggedIn={auth.isLoggedIn} permissions={auth.permissions} page="completedFiles" role={auth.role}>
+                  <CompletedFiles auth={auth} />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/master"
+              element={
+                <ProtectedRoute isLoggedIn={auth.isLoggedIn} permissions={auth.permissions} page="master" role={auth.role}>
+                  <MasterData />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/manage-master"
+              element={
+                <ProtectedRoute isLoggedIn={auth.isLoggedIn} permissions={auth.permissions} page="manageMaster" role={auth.role}>
+                  <MasterDataManager />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin-panel"
+              element={
+                <ProtectedRoute isLoggedIn={auth.isLoggedIn} permissions={auth.permissions} page="manageMaster" role={auth.role}>
+                  <AdminPanel />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/locals"
+              element={
+                <ProtectedRoute isLoggedIn={auth.isLoggedIn} permissions={auth.permissions} page="locals" role={auth.role}>
+                  <Locals auth={auth} />
+                </ProtectedRoute>
+              }
+            />
           </Routes>
         </div>
-        {/* Toast Notifications */}
+
         <ToastContainer position="bottom-right" autoClose={3000} />
       </div>
     </Router>

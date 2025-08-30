@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { toast } from "react-toastify";
+import * as XLSX from "xlsx";
 
 export default function Locals({ auth }) {
   const [lines, setLines] = useState([]);
@@ -217,6 +218,39 @@ export default function Locals({ auth }) {
     setIsEditing(false);
   };
 
+  /* ------------------------------- export excel ------------------------------ */
+  const exportToExcel = () => {
+    if (!selectedLine || !selectedPol) {
+      toast.warn("Please select Line and POL before exporting.");
+      return;
+    }
+
+    // Build rows: each charge is a row, equipment columns contain value + currency (if present)
+    const exportData = chargeRows.map((r) => {
+      const row = { Charge: r };
+      for (const c of columns) {
+        const val = gridValues[r] && gridValues[r][c] ? String(gridValues[r][c]).replace(/,/g, "") : "";
+        const curr = (currencies[r] && currencies[r][c]) || "";
+        row[c] = val === "" ? "" : (curr ? `${val} ${curr}` : val);
+      }
+      return row;
+    });
+
+    try {
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "LocalsCharges");
+      const safeLine = selectedLine.replace(/[^a-z0-9_-]/gi, '_');
+      const safePol = selectedPol.replace(/[^a-z0-9_-]/gi, '_');
+      const fileName = `locals_${safeLine}_${safePol}.xlsx`;
+      XLSX.writeFile(workbook, fileName);
+      toast.success(`Exported ${fileName}`);
+    } catch (err) {
+      console.error("Error exporting locals charges", err);
+      toast.error("Failed to export to Excel");
+    }
+  };
+
   useEffect(() => {
     const fetchMasterField = async (field) => {
       try {
@@ -308,7 +342,7 @@ export default function Locals({ auth }) {
           .input-editable:focus { outline: 1px dashed rgba(0,123,255,0.15); }
         `}</style>
         <h5>Local Charges (enter values per equipment type)</h5>
-        <div className="d-flex gap-2 mb-2">
+  <div className="d-flex gap-2 mb-2">
           {!isEditing ? (
             <>
               <button className="btn btn-outline-primary btn-sm" onClick={handleEdit}>
@@ -328,6 +362,9 @@ export default function Locals({ auth }) {
               </button>
             </>
           )}
+          <button className="btn btn-outline-success btn-sm" onClick={exportToExcel} disabled={!selectedLine || !selectedPol}>
+            Export to Excel
+          </button>
           <div className="ms-auto align-self-center text-muted small">
             {isEditing ? (
               lastSavedAt ? (
