@@ -13,7 +13,7 @@ import {
   setDoc,
   arrayUnion
 } from "firebase/firestore";
-import { DataGridPro } from "@mui/x-data-grid-pro";
+import { DataGrid } from "@mui/x-data-grid";
 import {
   TextField,
   Checkbox,
@@ -1793,6 +1793,63 @@ function Entries(props) {
     }
   };
 
+  /* --------------------------- fix missing sales for all --------------------------- */
+  const handleFixSalesForAll = async () => {
+    try {
+      const customerDoc = await getDoc(doc(db, "newMaster", "customer"));
+      const customerMasterList = customerDoc.exists() ? customerDoc.data().list || [] : [];
+      if (!customerMasterList || customerMasterList.length === 0) {
+        toast.info("No customer master data available to fix sales.");
+        return;
+      }
+
+      const updates = [];
+      const updatedEntries = [...entries];
+      let fixedCount = 0;
+
+      for (const row of entries) {
+        const currentSales = row.salesPersonName || (row.customer?.salesPerson) || "";
+        if (currentSales && currentSales.toString().trim() !== "") continue; // already has sales
+
+        const entryCustName = typeof row.customer === "string" ? row.customer : row.customer?.name || "";
+        if (!entryCustName) continue;
+
+        const target = norm(entryCustName);
+        const match = customerMasterList.find((m) => norm(m.name) === target);
+        if (match) {
+          // update firestore customer object (so other screens pick up salesPerson)
+          const docRef = doc(db, "entries", row.id);
+          updates.push(updateDoc(docRef, { customer: match }));
+
+          // update UI copy
+          const idx = updatedEntries.findIndex((e) => e.id === row.id);
+          if (idx !== -1) {
+            updatedEntries[idx] = {
+              ...updatedEntries[idx],
+              customer: match,
+              salesPersonName: match.salesPerson || "",
+              customerEmail: match.customerEmail || "",
+              salesPersonEmail: match.salesPersonEmail || ""
+            };
+          }
+          fixedCount++;
+        }
+      }
+
+      if (updates.length === 0) {
+        toast.info("No entries required fixing or no matching master records found.");
+        return;
+      }
+
+      await Promise.all(updates);
+      setEntries(updatedEntries);
+      toast.success(`${fixedCount} entr${fixedCount === 1 ? 'y' : 'ies'} updated with Sales Person from master data.`);
+    } catch (err) {
+      console.error("Failed to fix sales for entries:", err);
+      toast.error("Failed to fix sales for entries.");
+    }
+  };
+
   /* ------------------------------- duplicate flow ------------------------------ */
   const parseContainerInput = (s) =>
     (s || "")
@@ -1959,6 +2016,17 @@ function Entries(props) {
         </Button>
       </Box>
 
+      <Box sx={{ mb: 3, display: "flex", justifyContent: "center", gap: 2 }}>
+        <Button
+          variant="outlined"
+          color="primary"
+          onClick={handleFixSalesForAll}
+          title="Fix Sales for all entries by matching customer master data"
+        >
+          Fix Sales
+        </Button>
+      </Box>
+
       <Dialog
         open={addVesselDialogOpen}
         onClose={() => setAddVesselDialogOpen(false)}
@@ -2104,7 +2172,7 @@ function Entries(props) {
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
       >
-        <DataGridPro
+        <DataGrid
           rows={filteredEntries}
           columns={allColumns}
           // pin selection checkbox column first, then seeAudit, then bookingNo, customer, line
