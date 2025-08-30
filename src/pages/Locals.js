@@ -187,15 +187,6 @@ export default function Locals({ auth }) {
     }
   };
 
-  const handleClear = () => {
-    if (!isEditing) {
-      toast.info("Clear is only available while editing. Click Edit to modify values.");
-      return;
-    }
-
-    setGridValues(() => createEmptyGrid());
-    setCurrencies(createEmptyCurrencies());
-  };
 
   const handleEdit = () => {
     // enable editing; keep current savedGrid to allow cancel
@@ -353,9 +344,6 @@ export default function Locals({ auth }) {
             <>
               <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={loadingSave}>
                 {loadingSave ? "Saving..." : "Save"}
-              </button>
-              <button className="btn btn-secondary btn-sm" onClick={handleClear}>
-                Clear
               </button>
               <button className="btn btn-light btn-sm" onClick={handleCancel}>
                 Cancel
