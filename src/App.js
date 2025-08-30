@@ -11,11 +11,11 @@ import BookingRequestForm from "./pages/BookingRequestForm";
 import Dashboard from "./components/Dashboard";
 import Login from "./pages/Login";
 import AdminPanel from "./pages/AdminPanel";
-import UpdateSailingRoute from "./UpdateSailingRoute";
-import RTGS from "./pages/RTGS";
-import HBLCreation from "./pages/HBLCreation";
-import HBLEdit from "./pages/HBLEdit";
-import HBLPrint from "./pages/HBLPrint";
+// import UpdateSailingRoute from "./UpdateSailingRoute";
+// import RTGS from "./pages/RTGS";
+// import HBLCreation from "./pages/HBLCreation";
+// import HBLEdit from "./pages/HBLEdit";
+// import HBLPrint from "./pages/HBLPrint";
 import Locals from "./pages/Locals";
 
 import { ToastContainer } from "react-toastify";
