@@ -6,10 +6,12 @@ const allPermissions = [
   { key: "dashboard", label: "Dashboard" },
   { key: "addBooking", label: "Add Booking Entry" },
   { key: "entries", label: "View Entries" },
+  { key: "locals", label: "Locals" },
   { key: "completedFiles", label: "Completed Files" },
   { key: "master", label: "Add Master Data" },
   { key: "manageMaster", label: "Manage Master Data" },
   { key: "bookingRequest", label: "Booking Request Form" },
+  // { key: "updateselling", label: "Update selling" }, // Added new permission
 ];
 
 function AdminPanel() {
@@ -205,7 +207,7 @@ function AdminPanel() {
           }
           .form-group input:focus,
           .form-group select:focus {
-            border-color: #4b5e aa;
+            border-color: #4b5eaa;
             outline: none;
             transition: border-color 0.3s;
           }
@@ -474,6 +476,6 @@ function AdminPanel() {
       </div>
     </div>
   );
-};
+}
 
 export default AdminPanel;

@@ -235,3 +235,30 @@ tr:nth-child(even) {
 .text-danger {
   color: #dc3545 !important;
 }
+/* sticky pinned columns (community grid) */
+.pin-left-1, .pin-left-2, .pin-left-3 {
+  position: sticky !important;
+  background: #fff;
+  z-index: 2;                     /* above scrolling cells */
+}
+.MuiDataGrid-columnHeaders .pin-left-1,
+.MuiDataGrid-columnHeaders .pin-left-2,
+.MuiDataGrid-columnHeaders .pin-left-3 {
+  z-index: 4;                     /* above cells and separators */
+}
+
+/* Adjust the left offsets to match the widths you set above.
+   If you want to leave space for the selection checkbox column,
+   add ~48–56px to each left value. */
+.pin-left-1 { left: 0; }          /* customer (240px) */
+.pin-left-2 { left: 240px; }      /* customer 240 */
+.pin-left-3 { left: 400px; }      /* 240 + bookingNo 160 */
+
+/* Optional: vertical divider after the last pinned column */
+.pin-left-3::after {
+  content: "";
+  position: absolute;
+  top: 0; right: -1px;
+  width: 1px; height: 100%;
+  background: #e0e0e0;
+}
