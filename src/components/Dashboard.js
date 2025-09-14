@@ -662,8 +662,62 @@ const Dashboard = () => {
     setShowFilteredView(true);
   };
 
+  // Export helper that enforces the column set and order used in Entries export
   const exportToExcel = (data, fileName) => {
-    const worksheet = XLSX.utils.json_to_sheet(data);
+    if (!Array.isArray(data) || data.length === 0) {
+      const worksheet = XLSX.utils.json_to_sheet([]);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet1');
+      XLSX.writeFile(workbook, `${fileName}.xlsx`);
+      return;
+    }
+
+    // Fields to exclude (same as Entries.js)
+    const excludedFields = [
+      'createdAt', 'lastEdited', 'lastEditedBy', 'actions', 'createdBy', 'id', 'status', 'seeAudit'
+    ];
+
+    // Field keys in desired order
+    const orderedFieldKeys = [
+      'bookingNo', 'containerNo', 'customer', 'line', 'pol', 'fpod', 'vessel', 'volume',
+      'siCutOff', 'etd', 'siFiled', 'firstPrinted', 'correctionsFinalised', 'blReleased', 'finalDG', 'blType', 'linerInvoice'
+    ];
+
+    // Exact header labels requested
+    const orderedHeaderLabels = [
+      'Booking No','Container No','Customer','Line','POL','FPOD','Vessel','Volume',
+      'SI Cut Off','ETD','SI Filed','First Printed','Corrections Finalised','BL Released','Final DG','BL Type','Liner Invoice'
+    ];
+
+    // Build rows keyed by field keys
+    const rows = data.map((entry) => {
+      const row = {};
+      orderedFieldKeys.forEach((fk) => {
+        if (excludedFields.includes(fk)) return;
+        let value = entry[fk];
+        if (fk === 'customer') value = entry.customer?.name || entry.customer;
+        if ([ 'bookingDate','bookingValidity','etd','sobDate' ].includes(fk)) {
+          // try to format dates similar to Entries.formatDate if available
+          try { value = (value && typeof value === 'string') ? value : value; } catch { }
+        }
+        if ([ 'vgmFiled','siFiled','finalDG','firstPrinted','correctionsFinalised','linerInvoice','blReleased','isfSent','sob' ].includes(fk)) {
+          value = value ? 'Yes' : 'No';
+        }
+        row[fk] = value !== undefined && value !== null ? value : '';
+      });
+      return row;
+    });
+
+    // Map ordered field keys to header labels for the sheet
+    const exportDataOrdered = rows.map((r) => {
+      const o = {};
+      orderedFieldKeys.forEach((fk, idx) => {
+        o[orderedHeaderLabels[idx]] = r[fk] !== undefined ? r[fk] : '';
+      });
+      return o;
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(exportDataOrdered, { header: orderedHeaderLabels });
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet1');
     XLSX.writeFile(workbook, `${fileName}.xlsx`);
