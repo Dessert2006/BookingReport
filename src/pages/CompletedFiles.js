@@ -30,7 +30,14 @@ function CompletedFiles(props) {
     
     // Join with commas and spaces like in Entries component
     const volume = equipmentDetails
-      .map((detail) => `${detail.qty} x ${detail.equipmentType}`)
+      .map((detail) => {
+        const qty = detail?.qty || '';
+        const type = detail?.equipmentType || '';
+        // if equipmentType is missing, skip this item
+        if (!type) return null;
+        return `${qty ? qty + ' x ' : ''}${type}`.trim();
+      })
+      .filter(Boolean)
       .join(', ');
     
     const containerNo = equipmentDetails
@@ -43,7 +50,8 @@ function CompletedFiles(props) {
 
   // Function to format volume and containerNo for display (like in Entries)
   const formatMultipleValues = (value) => {
-    if (!value) return "";
+  if (value === undefined || value === null) return "";
+  if (typeof value === 'string' && value.trim().toLowerCase() === 'undefined') return "";
     
     // If it's a string with multiple values separated by newlines, convert to comma separation
     if (typeof value === 'string') {
@@ -79,8 +87,8 @@ function CompletedFiles(props) {
           fpod: entryData.fpod?.name || entryData.fpod || "",
           vessel: entryData.vessel?.name || entryData.vessel || "",
           // Use the formatted volume and containerNo, or fall back to existing data
-          volume: formatMultipleValues(volume || entryData.volume || ""),
-          containerNo: formatMultipleValues(containerNo || entryData.containerNo || ""),
+          volume: formatMultipleValues((volume && volume.trim()) || (entryData.volume && String(entryData.volume).trim()) || ""),
+          containerNo: formatMultipleValues((containerNo && containerNo.trim()) || (entryData.containerNo && String(entryData.containerNo).trim()) || ""),
           equipmentDetails: entryData.equipmentDetails || [],
           isfSent: entryData.isfSent || false,
           sob: entryData.sob || false,
@@ -224,7 +232,9 @@ function CompletedFiles(props) {
       headerName: "Volume",
       width: 200,
       renderCell: (params) => {
-        const value = params.value || "";
+  let value = params.value;
+  if (value === undefined || value === null) value = "";
+  if (typeof value === 'string' && value.trim().toLowerCase() === 'undefined') value = "";
         // Display multiple values with proper formatting
         return (
           <div style={{ 
@@ -243,7 +253,9 @@ function CompletedFiles(props) {
       headerName: "Container No",
       width: 200,
       renderCell: (params) => {
-        const value = params.value || "";
+  let value = params.value;
+  if (value === undefined || value === null) value = "";
+  if (typeof value === 'string' && value.trim().toLowerCase() === 'undefined') value = "";
         // Display multiple values with proper formatting
         return (
           <div style={{ 
