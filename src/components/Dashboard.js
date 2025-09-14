@@ -174,10 +174,45 @@ const Dashboard = () => {
         ? allData
         : allData.filter(entry => entry.location === selectedLocation);
 
-      // PENDING metrics only consider ACTIVE entries
+      // PENDING metrics only consider ACTIVE entries and only those whose ETD falls inside the selected date range
+      const isEntryInRange = (entry) => {
+        // If no date range selected, don't filter by date
+        if (!dateRange || !dateRange.startDate || !dateRange.endDate) return true;
+
+        // If entry has no ETD, treat it as out of range when a date range is specified
+        if (!entry.etd) return false;
+
+        const parseDateFlexible = (d) => {
+          if (!d) return new Date(NaN);
+          const dt = new Date(d);
+          if (!isNaN(dt)) return dt;
+          // try dd-mm-yyyy or dd/mm/yyyy
+          const parts = d.split(/[-/]/).map(p => p.trim());
+          if (parts.length === 3) {
+            // detect if first part is year
+            if (parts[0].length === 4) {
+              return new Date(`${parts[0]}-${parts[1]}-${parts[2]}`);
+            }
+            // assume dd-mm-yyyy
+            return new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+          }
+          return new Date(NaN);
+        };
+
+        const etdDate = parseDateFlexible(entry.etd);
+        const start = parseDateFlexible(dateRange.startDate);
+        const end = parseDateFlexible(dateRange.endDate);
+        if (isNaN(etdDate) || isNaN(start) || isNaN(end)) return false;
+        start.setHours(0,0,0,0);
+        end.setHours(23,59,59,999);
+        return etdDate >= start && etdDate <= end;
+      };
+
       const activeEntries = allEntries.filter(entry => {
         if (selectedLocation !== 'All' && entry.location !== selectedLocation) return false;
-        return entry.status === 'active';
+        if (entry.status !== 'active') return false;
+        // only include entries with ETD inside the selected sailing date range
+        return isEntryInRange(entry);
       });
 
       const pendingSI = activeEntries.filter(entry => !entry.siFiled).length;
@@ -202,7 +237,7 @@ const Dashboard = () => {
       }).length;
 
       setDashboardData({
-        pendingSI,
+        pendingSI,  
         pendingFirstPrint,
         pendingCorrection,
         pendingBL,
@@ -259,8 +294,8 @@ const Dashboard = () => {
 
       setDetailedEntries(detailedData);
 
-      // Expose all buckets so we can filter for bar clicks across both
-      window.dashboardData = { allEntries, completedEntries, allData };
+  // Expose all buckets and the active (in-range) entries so card clicks can use the same filtered set
+  window.dashboardData = { allEntries, completedEntries, allData, activeEntries };
     } catch (error) {
       console.error("Error fetching dashboard data:", error);
     } finally {
@@ -725,7 +760,7 @@ const Dashboard = () => {
           <div
             className="dashboard-card clickable-card p-4 text-center"
             style={{ backgroundColor: '#ffc107' }}
-            onClick={() => handleDashboardClick('pendingSI', window.dashboardData?.allEntries || [])}
+            onClick={() => handleDashboardClick('pendingSI', window.dashboardData?.activeEntries || [])}
           >
             <div className="metric-number" style={{ color: '#212529' }}>{dashboardData.pendingSI}</div>
             <div className="metric-label" style={{ color: '#212529' }}>PENDING SI</div>
@@ -735,7 +770,7 @@ const Dashboard = () => {
           <div
             className="dashboard-card clickable-card p-4 text-center"
             style={{ backgroundColor: '#17a2b8' }}
-            onClick={() => handleDashboardClick('pendingFirstPrint', window.dashboardData?.allEntries || [])}
+            onClick={() => handleDashboardClick('pendingFirstPrint', window.dashboardData?.activeEntries || [])}
           >
             <div className="metric-number">{dashboardData.pendingFirstPrint}</div>
             <div className="metric-label">PENDING FIRST PRINT</div>
@@ -745,7 +780,7 @@ const Dashboard = () => {
           <div
             className="dashboard-card clickable-card p-4 text-center"
             style={{ backgroundColor: '#fd7e14' }}
-            onClick={() => handleDashboardClick('pendingCorrection', window.dashboardData?.allEntries || [])}
+            onClick={() => handleDashboardClick('pendingCorrection', window.dashboardData?.activeEntries || [])}
           >
             <div className="metric-number">{dashboardData.pendingCorrection}</div>
             <div className="metric-label">PENDING CORRECTION</div>
@@ -755,7 +790,7 @@ const Dashboard = () => {
           <div
             className="dashboard-card clickable-card p-4 text-center"
             style={{ backgroundColor: '#e83e8c' }}
-            onClick={() => handleDashboardClick('pendingBL', window.dashboardData?.allEntries || [])}
+            onClick={() => handleDashboardClick('pendingBL', window.dashboardData?.activeEntries || [])}
           >
             <div className="metric-number">{dashboardData.pendingBL}</div>
             <div className="metric-label">PENDING BL</div>
@@ -765,7 +800,7 @@ const Dashboard = () => {
           <div
             className="dashboard-card clickable-card p-4 text-center"
             style={{ backgroundColor: '#dc3545' }}
-            onClick={() => handleDashboardClick('pendingInvoice', window.dashboardData?.allEntries || [])}
+            onClick={() => handleDashboardClick('pendingInvoice', window.dashboardData?.activeEntries || [])}
           >
             <div className="metric-number">{dashboardData.pendingInvoice}</div>
             <div className="metric-label">PENDING INVOICE</div>
@@ -775,7 +810,7 @@ const Dashboard = () => {
           <div
             className="dashboard-card clickable-card p-4 text-center"
             style={{ backgroundColor: '#6c757d' }}
-            onClick={() => handleDashboardClick('pendingDG', window.dashboardData?.allEntries || [])}
+            onClick={() => handleDashboardClick('pendingDG', window.dashboardData?.activeEntries || [])}
           >
             <div className="metric-number">{dashboardData.pendingDG}</div>
             <div className="metric-label">PENDING DG</div>
@@ -785,7 +820,7 @@ const Dashboard = () => {
           <div
             className="dashboard-card clickable-card p-4 text-center"
             style={{ backgroundColor: '#20c997' }}
-            onClick={() => handleDashboardClick('emptyPickup', window.dashboardData?.allEntries || [])}
+            onClick={() => handleDashboardClick('emptyPickup', window.dashboardData?.activeEntries || [])}
           >
             <div className="metric-number">{dashboardData.pendingEmptyPickup}</div>
             <div className="metric-label">EMPTY PICKUP</div>
