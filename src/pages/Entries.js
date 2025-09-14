@@ -1421,6 +1421,7 @@ function Entries(props) {
             : newRow.containerNo || "";
 
           const emailData = {
+            id: newRow.id,
             customer_email: customerEmails,
             sales_person_email: salesPersonEmails,
             customer_name: newRow.customer?.name || newRow.customer,
