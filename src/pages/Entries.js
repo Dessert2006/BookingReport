@@ -341,61 +341,55 @@ function Entries(props) {
 
     if (searchQuery) {
       const tokens = parseAdvancedQuery(searchQuery);
-      const normalizedTokens = tokens.map((t) => normalizeForSearch(t)).filter(Boolean);
-      filtered = filtered.filter((entry) => {
-        // prefer matching all tokens within the same text field (reduces cross-field partial matches)
-        const textFields = [
-          "location",
-          "customer",
-          "line",
-          "pol",
-          "pod",
-          "fpod",
-          "vessel",
-          "bookingNo",
-          "containerNo",
-          "volume",
-          "voyage",
-          "blNo",
-          "equipmentType",
-          "portCutOff",
-          "siCutOff",
-          "salesPersonName",
-          "referenceNo",
-          "remarks"
-        ];
+      filtered = filtered.filter((entry) =>
+        tokens.every((token) => {
+          const normalizedToken = normalizeForSearch(token);
+          const textFields = [
+            "location",
+            "customer",
+            "line",
+            "pol",
+            "pod",
+            "fpod",
+            "vessel",
+            "bookingNo",
+            "containerNo",
+            "volume",
+            "voyage",
+            "blNo",
+            "equipmentType",
+            "portCutOff",
+            "siCutOff",
+            "salesPersonName",
+            "referenceNo",
+            "remarks"
+          ];
+          const textMatch = textFields.some((field) => {
+            const value =
+              typeof entry[field] === "object"
+                ? entry[field]?.name
+                : entry[field];
+            return value && normalizeForSearch(value).includes(normalizedToken);
+          });
 
-        // textMatch: there exists at least one field where all tokens are present
-        const textMatch = normalizedTokens.length > 0 && textFields.some((field) => {
-          const raw = typeof entry[field] === "object" ? entry[field]?.name : entry[field];
-          if (!raw) return false;
-          const normVal = normalizeForSearch(raw);
-          return normalizedTokens.every((nt) => normVal.includes(nt));
-        });
-
-        // date match (unchanged)
-        const dateFields = ["bookingDate", "bookingValidity", "etd", "sobDate"];
-        const anyDateMatch = tokens.some((token) => {
+          const dateFields = ["bookingDate", "bookingValidity", "etd", "sobDate"];
           const normalizedDate = normalizeDate(token);
-          return (
-            normalizedDate && dateFields.some((field) => entry[field] === normalizedDate)
-          );
-        });
+          const dateMatch =
+            normalizedDate &&
+            dateFields.some((field) => entry[field] === normalizedDate);
 
-        // boolean match (unchanged)
-        const booleanFields = [
-          "vgmFiled",
-          "siFiled",
-          "finalDG",
-          "firstPrinted",
-          "correctionsFinalised",
-          "linerInvoice",
-          "blReleased",
-          "isfSent",
-          "sob"
-        ];
-        const booleanMatch = tokens.some((token) =>
-          booleanFields.some((field) => {
+          const booleanFields = [
+            "vgmFiled",
+            "siFiled",
+            "finalDG",
+            "firstPrinted",
+            "correctionsFinalised",
+            "linerInvoice",
+            "blReleased",
+            "isfSent",
+            "sob"
+          ];
+          const booleanMatch = booleanFields.some((field) => {
             if (token === "yes" || token === "true" || token === "filed") {
               return entry[field] === true;
             }
@@ -403,11 +397,11 @@ function Entries(props) {
               return entry[field] === false;
             }
             return false;
-          })
-        );
+          });
 
-        return textMatch || anyDateMatch || booleanMatch;
-      });
+          return textMatch || dateMatch || booleanMatch;
+        })
+      );
     }
 
     // Apply checkbox filter
@@ -1421,7 +1415,6 @@ function Entries(props) {
             : newRow.containerNo || "";
 
           const emailData = {
-            id: newRow.id,
             customer_email: customerEmails,
             sales_person_email: salesPersonEmails,
             customer_name: newRow.customer?.name || newRow.customer,
@@ -1432,8 +1425,6 @@ function Entries(props) {
             pol: newRow.pol,
             pod: newRow.pod,
             fpod: newRow.fpod || "",
-            // include location so backend selects correct sender (MUMBAI/GUJARAT)
-            location: newRow.location?.name || newRow.location || "",
             container_no: containerNo,
             volume: newRow.volume,
             bl_no: newRow.blNo || ""
@@ -1442,8 +1433,9 @@ function Entries(props) {
           await axios.post(
             "https://new-sob-mail-setup.onrender.com/api/send-sob-email",
             emailData,
-            { timeout: 20000 }
+            { timeout: 20000 }   // 20s is enough since we added SMTP timeout=10
           );
+
 
           setMailStatus({ success: true, message: "Mail sent successfully." });
         } catch (emailError) {
@@ -1452,11 +1444,11 @@ function Entries(props) {
             errorMessage = "Email service not available (connection refused)";
           else if (emailError.code === "ETIMEDOUT")
             errorMessage = "Email service timeout";
-          else if (emailError.response) {
-            const resp = emailError.response;
-            const serverError = resp.data?.error || resp.data?.message || resp.statusText;
-            errorMessage = `Email API error: ${resp.status} - ${serverError}`;
-          }
+          else if (emailError.response)
+            errorMessage = `Email API error: ${emailError.response.status} - ${
+              emailError.response.data?.message ||
+              emailError.response.statusText
+            }`;
           else if (emailError.request) errorMessage = "No response from email service";
           else errorMessage = emailError.message;
 
