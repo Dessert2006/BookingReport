@@ -1440,9 +1440,9 @@ function Entries(props) {
           };
 
           await axios.post(
-            "https://booking-email-backend.onrender.com/api/send-sob-email",
+            "https://new-sob-mail-setup.onrender.com/api/send-sob-email",
             emailData,
-            { timeout: 10000 }
+            { timeout: 20000 }
           );
 
           setMailStatus({ success: true, message: "Mail sent successfully." });
